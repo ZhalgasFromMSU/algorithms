@@ -37,25 +37,3 @@ void heap_sort(std::vector<int>& inp) {
         push_down(0, i - 1, inp);
     }
 }
-
-/*
-int main(void) {
-    int n;
-    std::cin >> n;
-    vector<int> inp(n);
-    for (int i = 0; i < n; ++i) {
-        std::cin >> inp[i];
-    }
-
-    for (int i = n / 2; i >= 0; --i) {
-        push_down(i, n - 1, inp);
-    }
-    
-    heap_sort(inp);
-
-    for (int i = 0; i < n; ++i) {
-        std::cout << inp[i] << ' ';
-    }
-    std::cout << '\n';
-    return 0;
-}*/
