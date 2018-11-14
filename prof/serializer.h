@@ -1,23 +1,8 @@
-//Given serializer, that serializes struct of uint64_ts and bools into stringstream
-//There must be serialize method in struct
-//Ex:
-//Data x {1, true, 10};
-//std::stringstream s;
-//Serializer ser(s);
-//ser.save(x); (calls for x.serialize(ser) // x.serialize(x.first, x.second, x.third))
-
-//There also deserialzer. (First tmp struct must be created)
-//Ex:
-//Data y {0, false, 0}
-//std::stringstream s;
-//s << "10, true, 20";
-//Deserializer des(s);
-//des.load(y);
+//Serializes data structure. (Watch history for more info)
 #pragma once
 
 #include <iostream>
 #include <string>
-
 
 enum class Error {
     NoError,
@@ -38,14 +23,14 @@ public:
     }
 
     template <class... Args>
-    Error operator()(Args... args) {
-        return serialize(args...);
+    Error operator()(Args&&... args) {
+        return serialize(std::forward<Args>(args)...);
     }
 private:
     template <class T, class... Args>
-    Error serialize(T& item, Args&... args) {
-        if (serialize(item) == Error::NoError) {
-            return serialize(args...);
+    Error serialize(T&& item, Args&&... args) {
+        if (serialize(std::forward<T>(item)) == Error::NoError) {
+            return serialize(std::forward<Args>(args)...);
         } else {
             return Error::CorruptedArchive;
         }
@@ -62,7 +47,7 @@ private:
     }
 
     template <class T>
-    Error serialize(T& item) {
+    Error serialize(T&& item) {
         return Error::CorruptedArchive;
     }
 };
@@ -80,14 +65,14 @@ public:
     }
 
     template<class... Args>
-    Error operator()(Args&... args) {
-        return deserialize(args...);
+    Error operator()(Args&&... args) {
+        return deserialize(std::forward<Args>(args)...);
     }
 private:
     template<class T, class... Args>
-    Error deserialize(T& item, Args&... args) {
-        if (deserialize(item) == Error::NoError) {
-            return deserialize(args...);
+    Error deserialize(T&& item, Args&&... args) {
+        if (deserialize(std::forward<T>(item)) == Error::NoError) {
+            return deserialize(std::forward<Args>(args)...);
         } else {
             return Error::CorruptedArchive;
         }
@@ -116,5 +101,10 @@ private:
             }
         }
         return Error::NoError;
+    }
+
+    template<class T>
+    Error deserialize(T&) {
+        return Error::CorruptedArchive;
     }
 };
