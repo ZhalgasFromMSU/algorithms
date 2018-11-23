@@ -1,6 +1,6 @@
 //Vector of numbers is given, vector of requests is given. On each requests replies with either sum or update
 //ex: s 1 5 (find sum from first to fifth elem in array (indexing start from 1))
-//u 2 100 (change second elem to 100)
+//u 2 100 (change second elem to 100) (only one elem can be changed)
 // {everything else} (print tree)
 
 #include <iostream>
