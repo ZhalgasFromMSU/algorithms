@@ -1,7 +1,7 @@
 //Fastest Dijkstra (working for set of dots on plane) I could come up with
 //Was written long ago
 //Finds shortest distance between two given dots
-//Works for n log(n)
+//Works for n * n * log(n)
 #pragma once
 #include <iostream>
 #include <set>
