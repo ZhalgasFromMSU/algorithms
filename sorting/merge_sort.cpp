@@ -31,9 +31,14 @@ std::ostream& operator<<(std::ostream& out, const MyClass& obj) {
     return out;
 }
 
-template<typename T, typename F = bool (*)(T, T)>
-void merge_sort(vec<T>& inp, F comp) {
-    std::cout << comp(inp[0], inp[1]) << '\n';
+template<typename T, typename Cmp>
+void merge_sort(vec<T>& inp, Cmp cmp) {
+    std::cout << cmp(inp[0], inp[1]) << '\n';
+}
+
+template<typename T>
+void merge_sort(vec<T>& inp) {
+    merge_sort(inp, std::greater<T>());
 }
 
 int main() {
@@ -43,6 +48,6 @@ int main() {
     for (auto& i: inp) {
         std::cin >> i;
     }
-    merge_sort<MyClass>(inp, std::greater<MyClass>());
+    merge_sort(inp);
     return 0;
 }
