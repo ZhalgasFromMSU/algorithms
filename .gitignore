@@ -1,7 +1,8 @@
 /soul
-/*/Makefile
+*/Makefile
 */*.o
 */prog
 */test.cpp
 */test.py
 /leetcode
+Makefile
