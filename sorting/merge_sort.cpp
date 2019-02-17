@@ -1,14 +1,20 @@
+#include <string>
 #include <iostream>
 #include <vector>
 #include <functional>
 #include <iterator>
+#include <iterator>
 
 class MyClass {
 private:
-public:
     int val_;
+public:
     MyClass()
         :   val_(0)
+    {}
+
+    MyClass(int a)
+        :   val_(a)
     {}
 
     bool operator>(const MyClass& other) const {
@@ -29,34 +35,49 @@ std::ostream& operator<<(std::ostream& out, const MyClass& obj) {
     return out;
 }
 
-// it1            it2             end2
+// it1         it2 = end1          end2
 //   |             |               |
 //   v1 v2 v3 v4 v5 v6 v7 v8 v9 v10
-template<typename Iterator, typename Cmp>
-void merge(Iterator it1, Iterator it2, Iterator end2,
-         Iterator buff, Cmp cmp) {
-    Iterator it, end1(it2);
-    size_t size = std::distance(it1, end2);
-    for (size_t i = 0; i < size && it1 != end1 && it2 != end2; ++i) {
+template<typename Iter, typename Cmp>
+void merge(Iter it1, Iter end1, Iter it2, Iter end2, Iter buff, Cmp cmp) {
+    size_t size = std::distance(it1, end1) + std::distance(it2, end2);
+    for (size_t i = 0; i < size - 1 && it1 != end1 && it2 != end2; ++i) {
         if (cmp(*it1, *it2)) {
-            *it = *it2;
-            ++it2;
+            *buff++ = *it2++;
         } else {
-            *it = *it1;
-            ++it1;
+            *buff++ = *it1++;
         }
-        ++it;
     }
     if (it1 == end1) {
-        std::copy(it2, end2, it);
+        std::copy(it2, end2, buff);
     } else if (it2 == end2) {
-        std::copy(it1, end1, it);
+        std::copy(it1, end1, buff);
     }
+}
+
+template<typename Iter, typename Cmp>
+void sort(Iter begin, Iter end, Iter buff, Cmp cmp) {
+    std::cout << *begin << '\t' << *(end - 1) << '\n';
+    if (std::distance(begin, end) < 2) {
+        return;
+    }
+    Iter mid = begin;
+    Iter mid_buff = buff;
+    std::advance(mid_buff, std::distance(begin, end) / 2);
+    std::advance(mid, std::distance(begin, end) / 2);
+    sort(begin, mid, buff, cmp);
+    sort(mid, end, ++mid_buff, cmp);
+    merge(begin, mid, mid, end, buff, cmp);
 }
 
 template<typename T, typename Cmp>
 void merge_sort(std::vector<T>& inp, Cmp cmp) {
     std::vector<T> buffer(inp.size());
+    auto mid = inp.begin();
+    std::advance(mid, inp.size() / 2);
+//    merge(inp.begin(), mid, mid, inp.end(), buffer.begin(), cmp);
+    sort(inp.begin(), inp.end(), buffer.begin(), cmp);
+    std::copy(buffer.begin(), buffer.end(), inp.begin());
 }
 
 template<typename T>
@@ -68,14 +89,11 @@ int main() {
     size_t n;
     std::cin >> n;
     std::vector<MyClass> inp(n);
-    for (auto& i: inp) {
+    for (MyClass& i: inp) {
         std::cin >> i;
     }
-//    merge_sort(inp);
-    std::vector<MyClass> buf(n);
-    merge(inp.begin(), inp.begin() + 3, inp.end(), buf.begin(), std::greater<MyClass>());
-    for (auto& i: buf) {
-        std::cout << i << '\t';
-    }
+    merge_sort(inp);
+    std::copy(inp.begin(), inp.end(), std::ostream_iterator<MyClass>(std::cout, " "));
+    std::cout << '\n';
     return 0;
 }
