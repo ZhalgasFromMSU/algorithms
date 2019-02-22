@@ -25,12 +25,7 @@ void push_down(int cur, int n, std::vector<int>& inp) {
 }
 
 //Сортировка
-template<typename Iter, typename Cmp>
-void heap_sort(Iter begin, Iter end, Cmp cmp) {
-    size_t n = std::distance(begin, end);
-    for (size_t i = n / 2;)
-}
-void heap_sort(std::vector<int>& in) {
+void heap_sort(std::vector<int>& inp) {
     int n = inp.size();
 
     for (int i = n / 2; i >= 0; --i) {
@@ -41,9 +36,4 @@ void heap_sort(std::vector<int>& in) {
         std::swap(inp[0], inp[i]);
         push_down(0, i - 1, inp);
     }
-}
-
-template<typename Iter>
-void heap_sort(Iter begin, Iter end) {
-    heap_sort(begin, end, std::greater<decltype(*begin)>());
 }
