@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <iterator>
+#include <type_traits>
 
 template<typename Iter, typename BuffIter, typename Cmp>
 void merge(Iter it1, Iter end1, Iter it2, Iter end2, BuffIter buff, Cmp cmp) {
@@ -44,7 +45,7 @@ void sort(Iter begin, Iter end, BuffIter buff, Cmp cmp) {
 template<typename Iter, typename Cmp>
 void merge_sort(Iter begin, Iter end, Cmp cmp) {
     //could use any buffer, but vector seems to be easiest.
-    std::vector<int> buffer(std::distance(begin, end));
+    std::vector<std::decay_t<decltype(*begin)>> buffer(std::distance(begin, end));
     sort(begin, end, buffer.begin(), cmp);
 }
 
