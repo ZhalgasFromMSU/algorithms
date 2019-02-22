@@ -40,10 +40,7 @@ void sort(Iter begin, Iter end, Iter buff, Cmp cmp) {
 template<typename T, typename Cmp>
 void merge_sort(std::vector<T>& inp, Cmp cmp) {
     std::vector<T> buffer(inp.size());
-    auto mid = inp.begin();
-    std::advance(mid, inp.size() / 2);
     sort(inp.begin(), inp.end(), buffer.begin(), cmp);
-    std::copy(buffer.begin(), buffer.end(), inp.begin());
 }
 
 template<typename T>
