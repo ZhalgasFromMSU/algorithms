@@ -40,9 +40,6 @@ std::ostream& operator<<(std::ostream& out, const MyClass& obj) {
     return out;
 }
 
-// it1         it2 = end1          end2
-//   |             |               |
-//   v1 v2 v3 v4 v5 v6 v7 v8 v9 v10
 template<typename Iter, typename Cmp>
 void merge(Iter it1, Iter end1, Iter it2, Iter end2, Iter buff, Cmp cmp) {
     size_t size = std::distance(it1, end1) + std::distance(it2, end2);
@@ -97,7 +94,7 @@ int main() {
     for (MyClass& i: inp) {
         std::cin >> i;
     }
-    merge_sort(inp);
-    std::cout << std::is_sorted(inp.begin(), inp.end()) << '\n';
+    merge_sort(inp, std::less<MyClass>());
+    std::cout << std::is_sorted(inp.begin(), inp.end(), std::greater<MyClass>()) << '\n';
     return 0;
 }
