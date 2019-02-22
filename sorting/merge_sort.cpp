@@ -4,6 +4,7 @@
 #include <functional>
 #include <iterator>
 #include <iterator>
+#include <algorithm>
 
 class MyClass {
 private:
@@ -19,6 +20,10 @@ public:
 
     bool operator>(const MyClass& other) const {
         return val_ > other.val_;
+    }
+
+    bool operator<(const MyClass& other) const {
+        return val_ < other.val_;
     }
 
     friend std::istream& operator>>(std::istream& in, MyClass& self);
@@ -57,17 +62,18 @@ void merge(Iter it1, Iter end1, Iter it2, Iter end2, Iter buff, Cmp cmp) {
 
 template<typename Iter, typename Cmp>
 void sort(Iter begin, Iter end, Iter buff, Cmp cmp) {
-    std::cout << *begin << '\t' << *(end - 1) << '\n';
     if (std::distance(begin, end) < 2) {
         return;
     }
     Iter mid = begin;
-    Iter mid_buff = buff;
-    std::advance(mid_buff, std::distance(begin, end) / 2);
     std::advance(mid, std::distance(begin, end) / 2);
     sort(begin, mid, buff, cmp);
-    sort(mid, end, ++mid_buff, cmp);
+    sort(mid, end, buff, cmp);
     merge(begin, mid, mid, end, buff, cmp);
+    for (auto i = begin; i != end; ++i) {
+        *i = *buff;
+        buff++;
+    }
 }
 
 template<typename T, typename Cmp>
@@ -75,7 +81,6 @@ void merge_sort(std::vector<T>& inp, Cmp cmp) {
     std::vector<T> buffer(inp.size());
     auto mid = inp.begin();
     std::advance(mid, inp.size() / 2);
-//    merge(inp.begin(), mid, mid, inp.end(), buffer.begin(), cmp);
     sort(inp.begin(), inp.end(), buffer.begin(), cmp);
     std::copy(buffer.begin(), buffer.end(), inp.begin());
 }
@@ -93,7 +98,6 @@ int main() {
         std::cin >> i;
     }
     merge_sort(inp);
-    std::copy(inp.begin(), inp.end(), std::ostream_iterator<MyClass>(std::cout, " "));
-    std::cout << '\n';
+    std::cout << std::is_sorted(inp.begin(), inp.end()) << '\n';
     return 0;
 }
