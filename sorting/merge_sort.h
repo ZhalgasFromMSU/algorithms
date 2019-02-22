@@ -4,8 +4,8 @@
 #include <functional>
 #include <iterator>
 
-template<typename Iter, typename Cmp>
-void merge(Iter it1, Iter end1, Iter it2, Iter end2, Iter buff, Cmp cmp) {
+template<typename Iter, typename BuffIter, typename Cmp>
+void merge(Iter it1, Iter end1, Iter it2, Iter end2, BuffIter buff, Cmp cmp) {
     size_t size = std::distance(it1, end1) + std::distance(it2, end2);
     for (size_t i = 0; i < size - 1 && it1 != end1 && it2 != end2; ++i) {
         if (cmp(*it1, *it2)) {
@@ -21,9 +21,8 @@ void merge(Iter it1, Iter end1, Iter it2, Iter end2, Iter buff, Cmp cmp) {
     }
 }
 
-template<typename Iter, typename Cmp>
-void sort(Iter begin, Iter end,
-          std::vector<decltype(*begin)>::iterator buff, Cmp cmp) {
+template<typename Iter, typename BuffIter, typename Cmp>
+void sort(Iter begin, Iter end, BuffIter buff, Cmp cmp) {
     if (std::distance(begin, end) < 2) {
         return;
     }
@@ -41,11 +40,12 @@ void sort(Iter begin, Iter end,
     /**
      *  @brief      Sorts elements of the structure. Takes additional O(n) memory
      *              and works for O(n * log(n))
-     *  @params     Two forward iterators, and compare function
+     *  @params     Two forward iterators, and compare function`
     */
 template<typename Iter, typename Cmp>
 void merge_sort(Iter begin, Iter end, Cmp cmp) {
-    std::vector<decltype(*begin)> buffer(std::distance(begin, end));
+    //could use any buffer, but vector seems to be easiest.
+    std::vector<int> buffer(std::distance(begin, end));
     sort(begin, end, buffer.begin(), cmp);
 }
 
