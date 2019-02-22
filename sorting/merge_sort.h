@@ -22,7 +22,8 @@ void merge(Iter it1, Iter end1, Iter it2, Iter end2, Iter buff, Cmp cmp) {
 }
 
 template<typename Iter, typename Cmp>
-void sort(Iter begin, Iter end, Iter buff, Cmp cmp) {
+void sort(Iter begin, Iter end,
+          std::vector<decltype(*begin)>::iterator buff, Cmp cmp) {
     if (std::distance(begin, end) < 2) {
         return;
     }
@@ -37,13 +38,18 @@ void sort(Iter begin, Iter end, Iter buff, Cmp cmp) {
     }
 }
 
-template<typename T, typename Cmp>
-void merge_sort(std::vector<T>& inp, Cmp cmp) {
-    std::vector<T> buffer(inp.size());
-    sort(inp.begin(), inp.end(), buffer.begin(), cmp);
+    /**
+     *  @brief      Sorts elements of the structure. Takes additional O(n) memory
+     *              and works for O(n * log(n))
+     *  @params     Two forward iterators, and compare function
+    */
+template<typename Iter, typename Cmp>
+void merge_sort(Iter begin, Iter end, Cmp cmp) {
+    std::vector<decltype(*begin)> buffer(std::distance(begin, end));
+    sort(begin, end, buffer.begin(), cmp);
 }
 
-template<typename T>
-void merge_sort(std::vector<T>& inp) {
-    merge_sort(inp, std::greater<T>());
+template<typename Iter>
+void merge_sort(Iter begin, Iter end) {
+    merge_sort(begin, end, std::greater<decltype(*begin)>());
 }
