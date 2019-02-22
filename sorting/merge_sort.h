@@ -1,7 +1,6 @@
 #pragma once
 #include <iostream>
 #include <vector>
-#include <functional>
 #include <iterator>
 
 template<typename Iter, typename BuffIter, typename Cmp>
