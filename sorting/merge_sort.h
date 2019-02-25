@@ -31,10 +31,7 @@ void sort(Iter begin, Iter end, BuffIter buff, Cmp cmp) {
     sort(begin, mid, buff, cmp);
     sort(mid, end, buff, cmp);
     merge(begin, mid, mid, end, buff, cmp);
-    for (auto i = begin; i != end; ++i) {
-        *i = *buff;
-        buff++;
-    }
+    std::copy(begin, end, buff);
 }
 
     /**
@@ -46,6 +43,7 @@ template<typename Iter, typename Cmp>
 void merge_sort(Iter begin, Iter end, Cmp cmp) {
     //could use any buffer, but vector seems to be easiest.
     std::vector<std::decay_t<decltype(*begin)>> buffer(std::distance(begin, end));
+    //decay_t чтобы убрать ссылку
     sort(begin, end, buffer.begin(), cmp);
 }
 
