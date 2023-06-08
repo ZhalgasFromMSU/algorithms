@@ -1,11 +1,8 @@
-#include "algo/finite_field/util.hpp"
 #include <iostream>
 
+#include <algo/finite_field/finite_field.hpp>
+
 int main() {
-    for (int i = 2; i * i < 1'000'005'001; ++i) {
-        if (algo::IsPrime(i * i + 1)) {
-            std::cerr << i << std::endl;
-        }
-    }
+    std::cerr << algo::ModuloField<131>::primitive() << std::endl;
     return 0;
 }
