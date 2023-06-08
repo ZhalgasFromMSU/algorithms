@@ -12,26 +12,31 @@ namespace algo {
         static_assert(suppress_prime_check || IsPrime(order));
 
     public:
-        static constexpr int primitive() noexcept {
-            return primitive_root_;
+        static constexpr ModuloField primitive() noexcept {
+            return kPrimitiveRoot;
         }
 
-        template<std::integral T>
-        static constexpr int Normalize(T x) noexcept;
+        constexpr ModuloField() noexcept = default;
+        constexpr ModuloField(int x) noexcept;
 
-        static constexpr bool Eq(int x, int y) noexcept;
+        constexpr ModuloField& operator+=(const ModuloField&) noexcept;
+        constexpr ModuloField& operator-=(const ModuloField&) noexcept;
+        constexpr ModuloField& operator*=(const ModuloField&) noexcept;
+        constexpr ModuloField& operator/=(const ModuloField&) noexcept;
 
-        static constexpr int Add(int x, int y) noexcept;
-        static constexpr int Sub(int x, int y) noexcept;
-        static constexpr int Mul(int x, int y) noexcept;
-        static constexpr int Div(int x, int y) noexcept;
+        constexpr bool operator==(const ModuloField&) const noexcept = default;
 
-        static constexpr int Power(int x, int exp) noexcept;
+        constexpr ModuloField ToPower(int exp) const noexcept;
+
+        constexpr int value() const noexcept {
+            return val;
+        }
 
     private:
         static constexpr int FindPrimitiveRoot() noexcept;
 
-        static constexpr int primitive_root_ = FindPrimitiveRoot();
+        static constexpr int kPrimitiveRoot = FindPrimitiveRoot();
+        int val = 0;
     };
 
     using GF_2 = ModuloField<2>;

@@ -37,7 +37,7 @@ namespace algo {
         for (int i = 2; i < order; ++i) {
             std::size_t j = 0;
             while (j < id) {
-                if (Power(i, (order - 1) / prime_factors[j]) == 1) {
+                if (Power<order>(i, (order - 1) / prime_factors[j]) == 1) {
                     break;
                 }
                 ++j;
@@ -51,68 +51,66 @@ namespace algo {
     }
 
     template<int order, bool _>
-    template<std::integral T>
-    constexpr int ModuloField<order, _>::Normalize(T x) noexcept {
-        if (x < 0) {
-            if (-x >= order) {
-                x %= order;
-            }
-            x = order - x;
-        } else if (x >= order) {
-            x %= order;
-        }
-        return x;
+    constexpr ModuloField<order, _>::ModuloField(int x) noexcept
+        : val {x}
+    {
+        val = Normalize<order>(val);
     }
 
     template<int order, bool _>
-    constexpr bool ModuloField<order, _>::Eq(int x, int y) noexcept {
-        return Normalize(x) == Normalize(y);
+    constexpr ModuloField<order, _>& ModuloField<order, _>::operator+=(const ModuloField<order, _>& rhs) noexcept {
+        val = Normalize<order>(static_cast<long long int>(val) + rhs.val);
+        return *this;
     }
 
     template<int order, bool _>
-    constexpr int ModuloField<order, _>::Add(int x, int y) noexcept {
-        return Normalize(static_cast<long long int>(x) + y);
+    constexpr ModuloField<order, _>& ModuloField<order, _>::operator-=(const ModuloField& rhs) noexcept {
+        val = Normalize<order>(static_cast<long long int>(val) - rhs.val);
+        return *this;
     }
 
     template<int order, bool _>
-    constexpr int ModuloField<order, _>::Sub(int x, int y) noexcept {
-        return Normalize(static_cast<long long int>(x) - y);
+    constexpr ModuloField<order, _>& ModuloField<order, _>::operator*=(const ModuloField& rhs) noexcept {
+        val = Normalize<order>(static_cast<long long int>(val) * rhs.val);
+        return *this;
     }
 
     template<int order, bool _>
-    constexpr int ModuloField<order, _>::Mul(int x, int y) noexcept {
-        return Normalize(static_cast<long long int>(x) * y);
+    constexpr ModuloField<order, _>& ModuloField<order, _>::operator/=(const ModuloField& rhs) noexcept {
+        return *this *= rhs.ToPower(order - 2);
     }
 
     template<int order, bool _>
-    constexpr int ModuloField<order, _>::Div(int x, int y) noexcept {
-        if (y == 0) {
-            std::terminate();
-        }
-        if (y < 0) {
-            y = Normalize(y);
-        }
-        return Normalize(Mul(x, Power(y, order - 2)));
+    constexpr ModuloField<order, _> ModuloField<order, _>::ToPower(int exp) const noexcept {
+        return Power<order>(val, exp);
     }
 
     template<int order, bool _>
-    constexpr int ModuloField<order, _>::Power(int x, int exp) noexcept {
-        if (exp >= order - 1) {
-            exp %= order - 1;
-        }
+    constexpr ModuloField<order, _> operator+(const ModuloField<order, _>& lhs, const ModuloField<order, _>& rhs) noexcept {
+        auto out = lhs;
+        out += rhs;
+        return out;
+    }
 
-        if (exp == 0) {
-            return 1;
-        }
+    template<int order, bool _>
+    constexpr ModuloField<order, _> operator-(const ModuloField<order, _>& lhs, const ModuloField<order, _>& rhs) noexcept {
+        auto out = lhs;
+        out -= rhs;
+        return out;
+    }
 
-        int tmp = Power(x, exp / 2);
-        if (exp & 1) {
-            return Mul(Mul(tmp, tmp), x);
-        } else {
-            return Mul(tmp, tmp);
-        }
+    template<int order, bool _>
+    constexpr ModuloField<order, _> operator*(const ModuloField<order, _>& lhs, const ModuloField<order, _>& rhs) noexcept {
+        auto out = lhs;
+        out *= rhs;
+        return out;
+    }
 
-        return tmp;
+    template<int order, bool _>
+    constexpr ModuloField<order, _> operator/(const ModuloField<order, _>& lhs, const ModuloField<order, _>& rhs) noexcept {
+        auto out = lhs;
+        out /= rhs;
+        return out;
     }
 
 } // namespace algo
