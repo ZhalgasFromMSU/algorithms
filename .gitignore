@@ -6,3 +6,5 @@
 */test.py
 /leetcode
 Makefile
+*build
+*.cache
