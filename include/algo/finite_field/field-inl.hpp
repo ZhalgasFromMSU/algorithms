@@ -14,7 +14,7 @@ namespace algo {
             return 2;
         }
 
-        // any number that fits into 32 byte integer has at most 9 prime different factors:
+        // any number that fits into 32 byte integer has at most 9 different prime factors:
         // 2 * 3 * 5 * 7 * 11 * 13 * 17 * 19 * 23 = 223,092,870 (_ * 29 > max_int)
         std::array<int, 9> prime_factors;
 
