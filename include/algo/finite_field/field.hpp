@@ -2,14 +2,12 @@
 
 #include "util.hpp"
 
-#include <concepts>
-
 namespace algo {
 
-    template<int order, bool suppress_prime_check = false>
+    template<int64_t order, int64_t primitive_root, bool suppress_order_and_root_check = false>
     class ModuloField {
         static_assert(order > 1);
-        static_assert(suppress_prime_check || IsPrime(order));
+        static_assert(suppress_order_and_root_check || IsPrime(order));
 
     public:
         static constexpr ModuloField primitive() noexcept {
