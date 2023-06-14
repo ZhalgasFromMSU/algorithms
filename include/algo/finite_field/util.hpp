@@ -31,6 +31,25 @@ namespace algo {
         }
     }
 
+    template<int modulo>
+    constexpr int Normalize(int x) noexcept {
+        if (x >= modulo) {
+            x %= modulo;
+        }
+        return x;
+    }
+
+    template<int modulo>
+    constexpr int Add(int x, int y) noexcept {
+        x = Normalize<modulo>(x);
+        y = Normalize<modulo>(y);
+        if (modulo - y > x) { // going to overflow
+            return Normalize<modulo>(x - modulo + y);
+        } else {
+            return x + y;
+        }
+    }
+
     template<int order>
     constexpr int Power(int x, int exp) noexcept {
         if (exp >= order - 1) {
