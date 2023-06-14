@@ -1,33 +1,34 @@
 #pragma once
 
-#include <concepts>
+#include "concepts.hpp"
+
+#include <array>
+#include <span>
 
 namespace algo {
 
-    constexpr bool IsPrime(int number) noexcept {
-        if (number < 2) {
-            return false;
-        }
+    template<std::integral T>
+    constexpr bool IsPrime(T number, double degree_of_certainty = 0.999999999) noexcept {
+        // https://en.wikipedia.org/wiki/Baillie–PSW_primality_test
 
-        for (int i = 2; i * i <= number; ++i) {
-            if (number % i == 0) {
-                return false;
-            }
-        }
+
+
+
+
+
         return true;
     }
 
-    template<int order>
-    constexpr int Normalize(std::integral auto x) noexcept {
+    template<Integral T, T modulo>
+    constexpr void Normalize(T& x) noexcept {
         if (x < 0) {
-            if (-x > order) {
-                x %= order;
+            if (-x > modulo) {
+                x %= modulo;
             }
-            x = order + x;
-        } else if (x >= order) {
-            x %= order;
+            x = modulo + x;
+        } else if (x >= modulo) {
+            x %= modulo;
         }
-        return x;
     }
 
     template<int order>
