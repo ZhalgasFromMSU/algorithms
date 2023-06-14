@@ -108,3 +108,29 @@ TEST(Number, BigInt) {
     ASSERT_TRUE(BigInt<13>{13} + -26 == -13);
     ASSERT_TRUE(13 + BigInt<13>{-26} == -13);
 }
+
+TEST(BigInt, Multiplication) {
+    {
+        ASSERT_TRUE(BigInt<32>{12145} * 34324 == 12145 * 34324);
+        ASSERT_TRUE(BigInt<32>{12145} * -34324 == 12145 * 34324);
+        ASSERT_TRUE(BigInt<8>{0b1111} * 0b1'0000 == 0b1111'0000);
+        ASSERT_TRUE(BigInt<17>{0b0'1111'1111'1111'1111} * 0b10 == 0b1'1111'1111'1111'1110);
+    }
+
+    {
+        BigInt<1024> asd = 1234343244;
+        BigInt<1024> tmp = 0;
+        for (int i = 0; i < 86'325; ++i) {
+            tmp += asd;
+        }
+
+        ASSERT_TRUE(tmp == asd * 86'325);
+    }
+}
+
+TEST(BigInt, Division) {
+    {
+        std::cerr << (-1 % 3) << std::endl;
+    }
+}
+

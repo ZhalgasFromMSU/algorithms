@@ -1,10 +1,6 @@
 #include <iostream>
 
-// #include <algo/finite_field/util.hpp>
-
-template<typename T, T modulo>
-
-
 int main() {
+    std::cerr << 0b1111'1111'0000'0000 << std::endl;
     return 0;
 }

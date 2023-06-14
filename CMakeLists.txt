@@ -15,7 +15,7 @@ PUBLIC
 
 target_sources(${PROJECT_NAME}
 PUBLIC
-    src/finite_field/field.cpp
+    src/dummy.cpp
 )
 
 add_compile_options(-Werror -Wall -pedantic -g -O2)

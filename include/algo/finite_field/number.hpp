@@ -18,7 +18,13 @@ namespace algo {
         constexpr BigInt() noexcept = default;
         constexpr BigInt(int integer) noexcept;
         constexpr BigInt(const char* str) noexcept;
-        constexpr BigInt(bool positive, const std::array<unsigned char, kByteSize>& bits) noexcept;
+
+        template<size_t another_byte_size>
+        constexpr BigInt(bool positive, const std::array<unsigned char, another_byte_size>& bits) noexcept;
+
+        template<size_t another_bit_size>
+            requires (another_bit_size < bit_size)
+        constexpr BigInt(const BigInt<another_bit_size>& other) noexcept;
 
         constexpr bool operator==(const BigInt&) const noexcept = default;
         constexpr auto operator<=>(const BigInt&) const noexcept;
@@ -53,7 +59,7 @@ namespace algo {
         }
 
     private:
-        constexpr std::pair<BigInt, BigInt> Divide(const BigInt&) const noexcept; // returns div and remainder
+        constexpr std::pair<BigInt, BigInt> DivideUnsigned(const BigInt&) const noexcept; // returns div and remainder
 
         bool is_positive_ = true;
         std::array<unsigned char, kByteSize> binary_ = {}; // most significant bit is on the left, e.g. 8 == '1000'
@@ -113,11 +119,21 @@ namespace algo {
     }
 
     template<size_t bit_size>
-    constexpr BigInt<bit_size>::BigInt(bool positive, const std::array<unsigned char, kByteSize>& bits) noexcept
-        : binary_{bits}
-        , is_positive_{positive}
+    template<size_t another_byte_size>
+    constexpr BigInt<bit_size>::BigInt(bool positive, const std::array<unsigned char, another_byte_size>& bits) noexcept
+        : is_positive_{positive}
     {
+        std::copy(bits.rbegin(), bits.rbegin() + kByteSize, binary_.rbegin());
         binary_[0] &= kFirstByteMask;
+    }
+
+    template<size_t bit_size>
+    template<size_t another_bit_size>
+        requires(another_bit_size < bit_size)
+    constexpr BigInt<bit_size>::BigInt(const BigInt<another_bit_size>& other) noexcept
+        : is_positive_{other.is_positive_}
+    {
+        std::copy(other.binary_.rbegin(), other.binary_.rend(), binary_.rbegin());
     }
 
     template<size_t bit_size>
@@ -236,60 +252,65 @@ namespace algo {
 
         // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
         BigInt ret;
-        BigInt overflows;
-        std::span<unsigned char, kByteSize> lhs_rev {binary_.rbegin(), binary_.rend()};
-        std::span<unsigned char, kByteSize> rhs_rev {rhs.binary_.rbegin(), rhs.binary_.rend()};
-        std::span<unsigned char, kByteSize> ret_rev {ret.binary_.rbegin(), ret.binary_.rend()};
-        std::span<unsigned char, kByteSize> ovf_rev {overflows.binary_.rbegin(), overflows.binary_.rend()};
-
-        for (size_t i = 0; i < kByteSize; ++i) {
+        for (size_t ii = 0; ii < kByteSize; ++ii) {
+            size_t i = kByteSize - 1 - ii;
+            BigInt tmp_res;
             for (size_t j = 0; j < kByteSize; ++j) {
-                if (i + j >= kByteSize) {
-                    continue;
-                }
-
-                unsigned short tmp = lhs_rev[i] * rhs_rev[j];
+                size_t idx = i - j;
+                unsigned short tmp = binary_.at(i);
+                tmp *= rhs.binary_.at(kByteSize - 1 - j);
                 unsigned short tmp_l = tmp & 0b1111'1111;
                 unsigned short tmp_h = tmp >> 8;
 
-                if (0b1111'1111 - tmp_l < ret_rev[i + j]) {
-                    unsigned short sum = tmp_l + ret_rev[i + j];
-                    ret_rev[i + j] = sum & 0b1111'1111;
-                    if (i + j + 1 < kByteSize) {
-                        ovf_rev[i + j + 1] += sum >> 8;
+                if (idx > 0) {
+                    tmp_res.binary_.at(idx - 1) = static_cast<unsigned char>(tmp_h);
+                }
+
+                if (0b1111'1111 - tmp_l < tmp_res.binary_.at(idx)) {
+                    unsigned short sum = tmp_l + tmp_res.binary_.at(idx);
+                    tmp_res.binary_.at(idx) = static_cast<unsigned char>(sum & 0b1111'1111);
+                    if (idx > 0) {
+                        tmp_res.binary_.at(idx - 1) += static_cast<unsigned char>(sum >> 8);
                     }
                 } else {
-                    ret_rev[i + j] += tmp_l;
+                    tmp_res.binary_.at(idx) += static_cast<unsigned char>(tmp_l);
                 }
 
-                if (i + j + 1 < kByteSize) {
-                    if (0b1111'1111 - tmp_h < ret_rev[i + j + 1]) {
-                        unsigned short sum = tmp_h + ret_rev[i + j + 1];
-                        ret_rev[i + j + 1] = sum & 0b1111'1111;
-                        if (i + j + 2 < kByteSize) {
-                            ovf_rev[i + j + 2] += sum >> 8;
-                        }
-                    } else {
-                        ret_rev[i + j + 1] += tmp_h;
-                    }
+                if (idx == 0) {
+                    break;
                 }
             }
+            ret += tmp_res;
         }
 
-        *this = ret + overflows;
+        *this = ret;
+        binary_.at(0) &= kFirstByteMask;
         return *this;
     }
 
     template<size_t bit_size>
+    constexpr std::pair<BigInt<bit_size>, BigInt<bit_size>> BigInt<bit_size>::DivideUnsigned(const BigInt& rhs) const noexcept {
+        std::pair<BigInt, BigInt> ret;
+        BigInt& quotient = ret.first;
+        BigInt& remainder = ret.second;
+
+        auto less = [this, &rhs](size_t idx) {
+
+        };
+
+        return ret;
+    }
+
+    template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator/=(const BigInt& rhs) noexcept {
-        is_positive_ = !(is_positive_ ^ rhs.is_positive_);
-        // *this = Div<bit_size>(binary_, rhs.binary_).first;
+        is_positive_ ^= !rhs.is_positive_;
+        *this = DivideUnsigned(rhs).first;
         return *this;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator%=(const BigInt& rhs) noexcept {
-        // *this = Div<bit_size>(binary_, rhs.binary_).second;
+        *this = DivideUnsigned(rhs).second;
         return *this;
     }
 
@@ -341,6 +362,21 @@ namespace algo {
     template<size_t bit_size, typename T>
     constexpr BigInt<bit_size> operator-(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
         return BigInt<bit_size>{std::forward<T>(lhs)} -= rhs;
+    }
+
+    template<size_t bit_size>
+    constexpr BigInt<bit_size> operator*(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
+        return BigInt<bit_size>{lhs} *= rhs;
+    }
+
+    template<size_t bit_size, typename T>
+    constexpr BigInt<bit_size> operator*(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
+        return BigInt<bit_size>{lhs} *= BigInt<bit_size>{std::forward<T>(rhs)};
+    }
+
+    template<size_t bit_size, typename T>
+    constexpr BigInt<bit_size> operator*(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
+        return BigInt<bit_size>{std::forward<T>(lhs)} *= rhs;
     }
 
 } // namespace algo
