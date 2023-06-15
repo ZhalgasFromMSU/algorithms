@@ -19,9 +19,6 @@ namespace algo {
         constexpr BigInt(int integer) noexcept;
         constexpr BigInt(const char* str) noexcept;
 
-        template<size_t another_byte_size>
-        constexpr BigInt(bool positive, const std::array<unsigned char, another_byte_size>& bits) noexcept;
-
         template<size_t another_bit_size>
             requires (another_bit_size < bit_size)
         constexpr BigInt(const BigInt<another_bit_size>& other) noexcept;
