@@ -51,7 +51,7 @@ namespace algo {
         constexpr BigInt& operator&=(const BigInt&) noexcept;
         constexpr BigInt& operator|=(const BigInt&) noexcept;
 
-        constexpr BigInt Power(int64_t exp) const noexcept;
+        constexpr BigInt Power(size_t exp) const noexcept;
 
         constexpr void Print() const noexcept {
             if (is_positive_) {
@@ -69,7 +69,7 @@ namespace algo {
             std::cerr << std::endl;
         }
 
-    private:
+    // private:
         constexpr std::pair<BigInt, BigInt> DivideUnsigned(const BigInt&) const noexcept; // returns div and remainder
 
         bool is_positive_ = true;
@@ -345,6 +345,7 @@ namespace algo {
         auto mul_greater = [](const BigInt& lhs, const BigInt& rhs, const BigInt& cmp) -> bool {
             // multiply numbers, until it is clear that cmp is greater than their product
 
+            return false;
         };
 
         BigInt l = 1;
@@ -418,10 +419,8 @@ namespace algo {
     }
 
     template<size_t bit_size>
-    constexpr BigInt<bit_size> BigInt<bit_size>::Power(int64_t exp) const noexcept {
-        if (exp < 0) {
-            return 0;
-        } else if (exp == 0) {
+    constexpr BigInt<bit_size> BigInt<bit_size>::Power(size_t exp) const noexcept {
+        if (exp == 0) {
             return 1;
         } else if (exp == 1) {
             return *this;

@@ -1,8 +1,19 @@
-#include <algo/finite_field/number.hpp>
+#include <algo/finite_field/bigint.hpp>
 
 #include <gtest/gtest.h>
 
 using namespace algo;
+
+template<BigInt<256> modulo>
+struct Field {
+    BigInt<256> tmp = modulo + 3;
+};
+
+
+TEST(Field, Field) {
+    Field<32> a;
+    a.tmp.Print();
+}
 
 TEST(BigInt, BigInt) {
     {

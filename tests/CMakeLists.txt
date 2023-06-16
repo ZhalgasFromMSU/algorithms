@@ -22,7 +22,7 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 add_executable(${PROJECT_NAME}
-    number.cpp
+    bigint.cpp
     multiplication.cpp
 )
 
