@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include <type_traits>
+#include <array>
 #include <bit>
 
 namespace algo {
@@ -38,7 +39,6 @@ namespace algo {
         constexpr BigInt operator<<(size_t) const noexcept;
         constexpr BigInt operator>>(size_t) const noexcept;
 
-
         constexpr BigInt operator-() const noexcept;
         constexpr BigInt& operator+=(const BigInt&) noexcept;
         constexpr BigInt& operator-=(const BigInt&) noexcept;
@@ -53,8 +53,10 @@ namespace algo {
 
         constexpr BigInt Power(size_t exp) const noexcept;
 
+        constexpr size_t BitWidth() const noexcept;
+
         constexpr void Print() const noexcept {
-            if (is_positive_) {
+            if (is_positive) {
                 std::cerr << "+ ";
             } else {
                 std::cerr << "- ";
@@ -62,34 +64,35 @@ namespace algo {
             for (size_t i = 0; i < kWordCount; ++i) {
                 uint32_t n = 1u << 31;
                 while (n != 0) {
-                    std::cerr << (binary_[kWordCount - 1 - i] & n ? 1 : 0);
+                    std::cerr << (binary[kWordCount - 1 - i] & n ? 1 : 0);
                     n >>= 1;
                 }
             }
             std::cerr << std::endl;
         }
 
-    // private:
+        bool is_positive = true;
+        std::array<uint32_t, kWordCount> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
+                                                       // can't use bitset here, because not constexp (since C++23)
+        
+    private:
         constexpr std::pair<BigInt, BigInt> DivideUnsigned(const BigInt&) const noexcept; // returns div and remainder
 
-        bool is_positive_ = true;
-        std::array<uint32_t, kWordCount> binary_ = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
-                                                       // can't use bitset here, because not constexp (since C++23)
     };
 
     // impl
     template<size_t bit_size>
     constexpr BigInt<bit_size>::BigInt(int64_t from) noexcept {
         if (from < 0) {
-            is_positive_ = false;
+            is_positive = false;
             from = -from;
         }
 
-        binary_[0] = from & ((1ull << 32) - 1);
+        binary[0] = from & ((1ull << 32) - 1);
         if (kWordCount > 1) {
-            binary_[1] = from >> 32;
+            binary[1] = from >> 32;
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
     }
 
     template<size_t bit_size>
@@ -100,14 +103,14 @@ namespace algo {
         }
 
         if (str[0] == '-') {
-            is_positive_ = false;
+            is_positive = false;
             str.remove_prefix(1);
         }
 
         if (str.size() >= 2 && str[0] == '0' && str[1] == 'b') {
             str.remove_prefix(2);
             auto set_bit = [this](size_t bit_idx) {
-                binary_[kWordCount - 1 - (bit_idx / 32)] &= 1u << (bit_idx % 32);
+                binary[kWordCount - 1 - (bit_idx / 32)] &= 1u << (bit_idx % 32);
             };
             for (size_t i = 0; i < str.size(); ++i) {
                 if (str[i] == '1') {
@@ -115,7 +118,7 @@ namespace algo {
                 }
             }
             *this >>= bit_size - str.size();
-            binary_.back() &= kFirstWordMask;
+            binary.back() &= kFirstWordMask;
         } else {
             std::cerr << "Only bytes are allowed" << std::endl;
             std::terminate();
@@ -125,7 +128,8 @@ namespace algo {
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator<<=(size_t shift) noexcept {
         if (shift >= bit_size) {
-            shift %= bit_size;
+            std::cerr << "Shifting by more than size" << std::endl;
+            std::terminate();
         }
         if (shift == 0) {
             return *this;
@@ -135,9 +139,9 @@ namespace algo {
         auto get_shifted_word = [&](size_t idx) -> uint32_t {
             uint32_t ret = 0;
             if (idx >= word_offset) {
-                ret |= binary_[idx - word_offset] << bit_offset;
+                ret |= binary[idx - word_offset] << bit_offset;
                 if (bit_offset != 0 && idx > word_offset) [[likely]] {
-                    ret |= binary_[idx - word_offset - 1] >> (32 - bit_offset);
+                    ret |= binary[idx - word_offset - 1] >> (32 - bit_offset);
                 }
             }
             return ret;
@@ -145,16 +149,17 @@ namespace algo {
 
         for (size_t i = 0; i < kWordCount; ++i) {
             size_t idx = kWordCount - 1 - i;
-            binary_[idx] = get_shifted_word(idx);
+            binary[idx] = get_shifted_word(idx);
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator>>=(size_t shift) noexcept {
         if (shift >= bit_size) {
-            shift %= bit_size;
+            std::cerr << "Shifting by more than size" << std::endl;
+            std::terminate();
         }
         if (shift == 0) {
             return *this;
@@ -164,18 +169,18 @@ namespace algo {
         auto get_shifted_word = [&](size_t idx) -> uint32_t {
             uint32_t ret = 0;
             if (size_t shifted_idx = idx + word_offset; shifted_idx < kWordCount) {
-                ret |= binary_[shifted_idx] >> bit_offset;
+                ret |= binary[shifted_idx] >> bit_offset;
                 if (bit_offset != 0 && shifted_idx + 1 < kWordCount) [[likely]] {
-                    ret |= binary_[shifted_idx + 1] << (32 - bit_offset);
+                    ret |= binary[shifted_idx + 1] << (32 - bit_offset);
                 }
             }
             return ret;
         };
 
         for (size_t i = 0; i < kWordCount; ++i) {
-            binary_[i] = get_shifted_word(i);
+            binary[i] = get_shifted_word(i);
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
@@ -192,86 +197,97 @@ namespace algo {
     template<size_t bit_size>
     constexpr BigInt<bit_size> BigInt<bit_size>::operator-() const noexcept {
         BigInt copy = *this;
-        copy.is_positive_ ^= true;
+        copy.is_positive ^= true;
         return copy;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator+=(const BigInt& rhs) noexcept {
-        if (is_positive_ ^ rhs.is_positive_) {
+        if (is_positive ^ rhs.is_positive) {
             return *this -= -rhs;
         }
 
         const uint32_t first_bit_mask = 1u << 31;
         uint32_t carry = 0;
         for (size_t i = 0; i < kWordCount; ++i) {
-            if (kMaxInt - carry < rhs.binary_[i]) {
+            if (kMaxInt - carry < rhs.binary[i]) {
                 continue;
             }
 
-            uint32_t tmp = rhs.binary_[i] + carry;
-            if (kMaxInt - binary_[i] < tmp) {
-                if (binary_[i] >= first_bit_mask) {
-                    binary_[i] ^= first_bit_mask;
+            uint32_t tmp = rhs.binary[i] + carry;
+            if (kMaxInt - binary[i] < tmp) {
+                if (binary[i] >= first_bit_mask) {
+                    binary[i] ^= first_bit_mask;
                 } else {
                     tmp ^= first_bit_mask;
                 }
-                binary_[i] += tmp;
-                binary_[i] ^= first_bit_mask;
+                binary[i] += tmp;
+                binary[i] ^= first_bit_mask;
                 carry = 1;
             } else {
-                binary_[i] += tmp;
+                binary[i] += tmp;
                 carry = 0;
             }
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator-=(const BigInt& rhs) noexcept {
-        if (is_positive_ ^ rhs.is_positive_) {
+        if (is_positive ^ rhs.is_positive) {
             return *this += -rhs;
         }
 
         if (auto cmp = *this <=> rhs; cmp == 0) {
-            binary_ = {};
+            binary = {};
             return *this;
-        } else if ((cmp > 0 && !is_positive_) || (cmp < 0 && is_positive_)) {
+        } else if ((cmp > 0 && !is_positive) || (cmp < 0 && is_positive)) {
             BigInt tmp = *this;
             *this = rhs;
             *this -= tmp;
-            is_positive_ ^= true;
+            is_positive ^= true;
             return *this;
         }
 
         uint32_t borrow = 0;
         for (size_t i = 0; i < kWordCount; ++i) {
-            if (kMaxInt - borrow < rhs.binary_[i]) {
+            if (kMaxInt - borrow < rhs.binary[i]) {
                 continue;
             }
 
-            uint32_t tmp = rhs.binary_[i] + borrow;
-            if (binary_[i] < tmp) {
-                binary_[i] += kMaxInt - tmp + 1;
+            uint32_t tmp = rhs.binary[i] + borrow;
+            if (binary[i] < tmp) {
+                binary[i] += kMaxInt - tmp + 1;
                 borrow = 1;
             } else {
-                binary_[i] -= tmp;
+                binary[i] -= tmp;
                 borrow = 0;
             }
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator*=(const BigInt& rhs) noexcept {
-        if (rhs == 0) {
-            binary_ = {};
+        if (rhs == 0 || *this == 0) {
+            binary = {};
             return *this;
         }
 
-        is_positive_ ^= !rhs.is_positive_;
+        is_positive ^= !rhs.is_positive;
+        if (rhs == 1) {
+            return *this;
+        } else if (*this == 1) {
+            return *this = rhs;
+        }
+
+        // Fast multiplication for powers of 2
+        if ((rhs & (rhs - 1)) == 0) {
+            return *this <<= rhs.BitWidth() - 1;
+        }
+
         const uint32_t first_bit_mask = 1u << 31;
 
         // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
@@ -284,35 +300,35 @@ namespace algo {
                     break;
                 }
                 
-                uint64_t prod = static_cast<uint64_t>(binary_[i]) * rhs.binary_[j];
+                uint64_t prod = static_cast<uint64_t>(binary[i]) * rhs.binary[j];
                 uint32_t prod_l = static_cast<uint32_t>(prod & kMaxInt);
                 uint32_t prod_h = static_cast<uint32_t>(prod >> 32);
 
                 if (idx + 1 < kWordCount) {
-                    tmp.binary_[idx + 1] = prod_h;
+                    tmp.binary[idx + 1] = prod_h;
                 }
 
-                if (kMaxInt - prod_l < tmp.binary_[idx]) {
-                    if (prod_l > tmp.binary_[idx]) {
+                if (kMaxInt - prod_l < tmp.binary[idx]) {
+                    if (prod_l > tmp.binary[idx]) {
                         prod_l ^= first_bit_mask;
                     } else {
-                        tmp.binary_[idx] ^= first_bit_mask;
+                        tmp.binary[idx] ^= first_bit_mask;
                     }
-                    tmp.binary_[idx] += prod_l;
-                    tmp.binary_[idx] ^= first_bit_mask;
+                    tmp.binary[idx] += prod_l;
+                    tmp.binary[idx] ^= first_bit_mask;
 
                     if (idx + 1 < kWordCount) {
-                        tmp.binary_[idx + 1] += 1;
+                        tmp.binary[idx + 1] += 1;
                     }
                 } else {
-                    tmp.binary_[idx] += prod_l;
+                    tmp.binary[idx] += prod_l;
                 }
             }
             ret += tmp;
         }
 
         *this = ret;
-        binary_.at(0) &= kFirstWordMask;
+        binary.at(0) &= kFirstWordMask;
         return *this;
     }
 
@@ -326,19 +342,14 @@ namespace algo {
         } else if (rhs == 1) {
             return {*this, 0};
         } else if (rhs == 2) {
-            return {*this >> 1, binary_[0] & 1};
+            return {*this >> 1, binary[0] & 1};
         } else if (*this == rhs) {
             return {1, 0};
         }
 
         // fast division for powers of 2
         if ((rhs & (rhs - 1)) == 0) {
-            for (size_t i = 0; i < kWordCount; ++i) {
-                if (rhs.binary_[i] != 0) {
-                    size_t bit_idx = std::bit_width(rhs.binary_[i]) + i * 32;
-                    return {*this >> (bit_idx - 1), *this & (rhs - 1)};
-                }
-            }
+            return {*this >> (rhs.BitWidth() - 1), *this & (rhs - 1)};
         }
 
         // use binary search to find quotient
@@ -365,7 +376,7 @@ namespace algo {
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator/=(const BigInt& rhs) noexcept {
-        is_positive_ ^= !rhs.is_positive_;
+        is_positive ^= !rhs.is_positive;
         *this = DivideUnsigned(rhs).first;
         return *this;
     }
@@ -383,9 +394,9 @@ namespace algo {
     template<size_t bit_size>
     constexpr BigInt<bit_size> BigInt<bit_size>::operator~() const noexcept {
         BigInt ret;
-        ret.is_positive_ = is_positive_;
+        ret.is_positive = is_positive;
         for (size_t i = 0; i < kWordCount; ++i) {
-            ret.binary_[i] = ~binary_[i];
+            ret.binary[i] = ~binary[i];
         }
         ret.back() &= kFirstWordMask;
         return ret;
@@ -394,27 +405,27 @@ namespace algo {
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator^=(const BigInt& other) noexcept {
         for (size_t i = 0; i < kWordCount; ++i) {
-            binary_[i] ^= other.binary_[i];
+            binary[i] ^= other.binary[i];
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator|=(const BigInt& other) noexcept {
         for (size_t i = 0; i < kWordCount; ++i) {
-            binary_[i] |= other.binary_[i];
+            binary[i] |= other.binary[i];
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
     template<size_t bit_size>
     constexpr BigInt<bit_size>& BigInt<bit_size>::operator&=(const BigInt& other) noexcept {
         for (size_t i = 0; i < kWordCount; ++i) {
-            binary_[i] &= other.binary_[i];
+            binary[i] &= other.binary[i];
         }
-        binary_.back() &= kFirstWordMask;
+        binary.back() &= kFirstWordMask;
         return *this;
     }
 
@@ -435,6 +446,16 @@ namespace algo {
     }
 
     template<size_t bit_size>
+    constexpr size_t BigInt<bit_size>::BitWidth() const noexcept {
+        for (size_t i = kWordCount - 1; i > 0; --i) {
+            if (binary[i] != 0) {
+                return i * 32 + std::bit_width(binary[i]);
+            }
+        }
+        return std::bit_width(binary[0]);
+    }
+
+    template<size_t bit_size>
     constexpr bool BigInt<bit_size>::operator==(const BigInt& rhs) const noexcept {
         return (*this <=> rhs) == 0;
     }
@@ -443,11 +464,11 @@ namespace algo {
     constexpr auto BigInt<bit_size>::operator<=>(const BigInt& rhs) const noexcept {
         for (size_t i = 0; i < kWordCount; ++i) {
             size_t idx = kWordCount - 1 - i;
-            if (binary_.at(idx) != rhs.binary_.at(idx)) {
-                if (is_positive_) {
-                    return binary_.at(idx) <=> rhs.binary_.at(idx);
+            if (binary.at(idx) != rhs.binary.at(idx)) {
+                if (is_positive) {
+                    return binary.at(idx) <=> rhs.binary.at(idx);
                 } else {
-                    return rhs.binary_.at(idx) <=> binary_.at(idx);
+                    return rhs.binary.at(idx) <=> binary.at(idx);
                 }
             }
         }

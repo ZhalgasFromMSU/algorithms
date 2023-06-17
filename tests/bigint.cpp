@@ -4,17 +4,6 @@
 
 using namespace algo;
 
-template<BigInt<256> modulo>
-struct Field {
-    BigInt<256> tmp = modulo + 3;
-};
-
-
-TEST(Field, Field) {
-    Field<32> a;
-    a.tmp.Print();
-}
-
 TEST(BigInt, BigInt) {
     {
         BigInt<32> a {13};
@@ -122,6 +111,13 @@ TEST(BigInt, Mul) {
         ASSERT_TRUE(BigInt<32>{12145} * -34324 == 12145 * 34324);
         ASSERT_TRUE(BigInt<8>{0b1111} * 0b1'0000 == 0b1111'0000);
         ASSERT_TRUE(BigInt<17>{0b0'1111'1111'1111'1111} * 0b10 == 0b1'1111'1111'1111'1110);
+    }
+
+    {
+        BigInt<64> a = 13;
+        for (int64_t i : {1ll << 32, 1ll << 41, 1ll << 17, 1ll << 58}) {
+            ASSERT_TRUE(a * i == 13ll * i) << i;
+        }
     }
 
     {
