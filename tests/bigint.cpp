@@ -8,8 +8,8 @@ TEST(BigInt, BigInt) {
     {
         BigInt<27> a {"0b11101100"};
         ASSERT_TRUE(a == 0b11101100);
-        BigInt<49> b {"0b1'1111'0000'1010'0000'1111'0000'1010'0000"};
-        ASSERT_TRUE(b == 0b1'1111'0000'1010'0000'1111'0000'1010'0000ull);
+        BigInt<49> b {"0b1001'11110000101000001111000010100000"};
+        ASSERT_TRUE(b == 0b1001'1111'0000'1010'0000'1111'0000'1010'0000ull);
     }
 
     {
@@ -131,11 +131,12 @@ TEST(BigInt, Mul) {
         BigInt<1024> asd = 1234343244;
         asd *= 123412423523423123;
         BigInt<1024> tmp = 0;
-        for (int i = 0; i < 286'325; ++i) {
+        int64_t limit = 286'325;
+        for (int64_t i = 0; i < limit; ++i) {
             tmp += asd;
         }
 
-        ASSERT_TRUE(tmp == asd * 286'325);
+        ASSERT_TRUE(tmp == asd * limit);
     }
 
     {
