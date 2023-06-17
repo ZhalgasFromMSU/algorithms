@@ -55,25 +55,11 @@ namespace algo {
 
         constexpr size_t BitWidth() const noexcept;
 
-        constexpr void Print() const noexcept {
-            if (is_positive) {
-                std::cerr << "+ ";
-            } else {
-                std::cerr << "- ";
-            }
-            for (size_t i = 0; i < kWordCount; ++i) {
-                uint32_t n = 1u << 31;
-                while (n != 0) {
-                    std::cerr << (binary[kWordCount - 1 - i] & n ? 1 : 0);
-                    n >>= 1;
-                }
-            }
-            std::cerr << std::endl;
-        }
+        constexpr void PrintBinary() const noexcept;
 
         bool is_positive = true;
         std::array<uint32_t, kWordCount> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
-                                                       // can't use bitset here, because not constexp (since C++23)
+                                                      // can't use bitset here, because not constexp (since C++23)
         
     private:
         constexpr std::pair<BigInt, BigInt> DivideUnsigned(const BigInt&) const noexcept; // returns div and remainder
@@ -110,14 +96,22 @@ namespace algo {
         if (str.size() >= 2 && str[0] == '0' && str[1] == 'b') {
             str.remove_prefix(2);
             auto set_bit = [this](size_t bit_idx) {
-                binary[kWordCount - 1 - (bit_idx / 32)] &= 1u << (bit_idx % 32);
+                binary[bit_idx / 32] |= 1u << (bit_idx % 32);
             };
+            size_t count = 0;
             for (size_t i = 0; i < str.size(); ++i) {
                 if (str[i] == '1') {
-                    set_bit(i);
+                    if (count > bit_size - 1) {
+                        std::cerr << "String is too long" << std::endl;
+                        std::terminate();
+                    }
+                    set_bit(bit_size - 1 - count);
+                }
+                if (str[i] != '\'') {
+                    count += 1;
                 }
             }
-            *this >>= bit_size - str.size();
+            *this >>= bit_size - count;
             binary.back() &= kFirstWordMask;
         } else {
             std::cerr << "Only bytes are allowed" << std::endl;
@@ -288,48 +282,110 @@ namespace algo {
             return *this <<= rhs.BitWidth() - 1;
         }
 
-        const uint32_t first_bit_mask = 1u << 31;
+        constexpr uint32_t first_bit_mask = 1u << 31;
+        const size_t bit_width = BitWidth();
+        const size_t rhs_bit_width = rhs.BitWidth();
 
-        // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
-        BigInt ret;
-        for (size_t i = 0; i < kWordCount; ++i) {
-            BigInt tmp;
-            for (size_t j = 0; j < kWordCount; ++j) {
-                size_t idx = i + j;
-                if (idx >= kWordCount) {
-                    break;
+        // Case when multiplication can be done linearly, without extra stack allocation for temporary result
+        if (bit_width <= 32 || rhs_bit_width <= 32) {
+            uint32_t tmp_word = binary[0];
+            binary[0] = 0;
+            for (size_t i = 0; i < kWordCount; ++i) {
+                uint64_t prod;
+                if (bit_width <= 32) {
+                    prod = static_cast<uint64_t>(tmp_word) * rhs.binary[i];
+                } else {
+                    prod = static_cast<uint64_t>(tmp_word) * rhs.binary[0];
+                    if (i + 1 < kWordCount) {
+                        tmp_word = binary[i + 1];
+                    }
                 }
-                
-                uint64_t prod = static_cast<uint64_t>(binary[i]) * rhs.binary[j];
                 uint32_t prod_l = static_cast<uint32_t>(prod & kMaxInt);
                 uint32_t prod_h = static_cast<uint32_t>(prod >> 32);
 
-                if (idx + 1 < kWordCount) {
-                    tmp.binary[idx + 1] = prod_h;
+                if (i + 1 < kWordCount) {
+                    binary[i + 1] = prod_h;
                 }
 
-                if (kMaxInt - prod_l < tmp.binary[idx]) {
-                    if (prod_l > tmp.binary[idx]) {
+                if (kMaxInt - prod_l < binary[i]) {
+                    if (prod_l > binary[i]) {
                         prod_l ^= first_bit_mask;
                     } else {
-                        tmp.binary[idx] ^= first_bit_mask;
+                        binary[i] ^= first_bit_mask;
                     }
-                    tmp.binary[idx] += prod_l;
-                    tmp.binary[idx] ^= first_bit_mask;
+                    binary[i] += prod_l;
+                    binary[i] ^= first_bit_mask;
 
-                    if (idx + 1 < kWordCount) {
-                        tmp.binary[idx + 1] += 1;
+                    if (i + 1 < kWordCount) {
+                        binary[i + 1] += 1;
                     }
                 } else {
-                    tmp.binary[idx] += prod_l;
+                    binary[i] += prod_l;
                 }
             }
-            ret += tmp;
+            binary.back() &= kFirstWordMask;
+            return *this;
         }
 
-        *this = ret;
-        binary.at(0) &= kFirstWordMask;
-        return *this;
+        if constexpr (bit_size <= 1024 && false) { // for small numbers do quadratic
+            BigInt ret;
+            for (size_t i = 0; i < kWordCount; ++i) {
+                BigInt tmp;
+                for (size_t j = 0; j < kWordCount; ++j) {
+                    size_t idx = i + j;
+                    if (idx >= kWordCount) {
+                        break;
+                    }
+                
+                    uint64_t prod = static_cast<uint64_t>(binary[i]) * rhs.binary[j];
+                    uint32_t prod_l = static_cast<uint32_t>(prod & kMaxInt);
+                    uint32_t prod_h = static_cast<uint32_t>(prod >> 32);
+
+                    if (idx + 1 < kWordCount) {
+                        tmp.binary[idx + 1] = prod_h;
+                    }
+
+                    if (kMaxInt - prod_l < tmp.binary[idx]) {
+                        if (prod_l > tmp.binary[idx]) {
+                            prod_l ^= first_bit_mask;
+                        } else {
+                            tmp.binary[idx] ^= first_bit_mask;
+                        }
+                        tmp.binary[idx] += prod_l;
+                        tmp.binary[idx] ^= first_bit_mask;
+
+                        if (idx + 1 < kWordCount) {
+                            tmp.binary[idx + 1] += 1;
+                        }
+                    } else {
+                        tmp.binary[idx] += prod_l;
+                    }
+                }
+                ret += tmp;
+            }
+
+            *this = ret;
+            binary.back() &= kFirstWordMask;
+            return *this;
+        } else {
+            // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
+            size_t shift = std::max(bit_width, rhs_bit_width) / 2;
+            BigInt bottom_half = (BigInt{1} << shift) - 1;
+
+            BigInt this_l = *this & bottom_half;
+            BigInt this_h = *this >> shift;
+
+            BigInt rhs_l = rhs & bottom_half;
+            BigInt rhs_h = rhs >> shift;
+
+            BigInt h_h = this_h * rhs_h;
+            BigInt l_l = this_l * rhs_l;
+            BigInt mix = (this_h + this_l) * (rhs_h + rhs_l);
+
+            *this = (((h_h << shift) + mix - l_l - h_h) << shift) + l_l;
+            binary.back() &= kFirstWordMask;
+            return *this;
+        }
     }
 
     template<size_t bit_size>
@@ -453,6 +509,23 @@ namespace algo {
             }
         }
         return std::bit_width(binary[0]);
+    }
+
+    template<size_t bit_size>
+    constexpr void BigInt<bit_size>::PrintBinary() const noexcept {
+        if (is_positive) {
+            std::cerr << "+ ";
+        } else {
+            std::cerr << "- ";
+        }
+        for (size_t i = 0; i < kWordCount; ++i) {
+            uint32_t n = 1u << 31;
+            while (n != 0) {
+                std::cerr << (binary[kWordCount - 1 - i] & n ? 1 : 0);
+                n >>= 1;
+            }
+        }
+        std::cerr << std::endl;
     }
 
     template<size_t bit_size>
