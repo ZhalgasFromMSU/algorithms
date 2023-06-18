@@ -10,22 +10,20 @@
 
 namespace algo {
 
-    template<size_t bit_size>
+    template<size_t word_capacity>
     class BigInt;
 
     template<typename T>
     struct IsBigInt : std::false_type {};
 
-    template<size_t bit_size>
-    struct IsBigInt<BigInt<bit_size>> : std::true_type {};
+    template<size_t word_capacity>
+    struct IsBigInt<BigInt<word_capacity>> : std::true_type {};
 
-    template<size_t bit_capacity>
+    template<size_t word_capacity>
     class BigInt {
-        static_assert(bit_capacity > 0);
+        static_assert(word_capacity > 0);
 
         static constexpr uint32_t kMaxWord = std::numeric_limits<uint32_t>::max();
-        static constexpr size_t kWordCapacity = (bit_capacity + 31) / 32;
-        static constexpr uint32_t kFirstWordMask = bit_capacity % 32 == 0 ? kMaxWord : (1u << bit_capacity % 32) - 1u;
 
     public:
         constexpr BigInt() noexcept = default;
@@ -33,7 +31,7 @@ namespace algo {
         constexpr BigInt(std::string_view str) noexcept;
 
         template<typename It>
-            requires( *It{} -> uint32_t )
+            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
         constexpr BigInt(It begin, It end, bool is_positive = true) noexcept;
 
         constexpr bool operator==(const BigInt&) const noexcept;
@@ -63,39 +61,51 @@ namespace algo {
         constexpr void PrintBinary() const noexcept;
 
         bool is_positive = true;
-        std::array<uint32_t, kWordCapacity> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
+        std::array<uint32_t, word_capacity> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
                                                       // can't use bitset here, because not constexp (since C++23)
         size_t words_count = 0;
 
     private:
-        constexpr bool TrySetWordsCount(size_t val) noexcept;
+        template<typename It>
+            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+        constexpr BigInt& UnsignedAddNonZeroEndingRange(It begin, It end) noexcept;
 
-        constexpr BigInt& MultiplyUnsigned(const BigInt&) noexcept;
+        template<typename It>
+            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+        constexpr BigInt& UnsignedSubSmallerNonZeroEndingRange(It begin, It end) noexcept;
 
-        constexpr std::pair<BigInt, BigInt> DivideUnsigned(const BigInt&) const noexcept; // returns div and remainder
+        constexpr BigInt& ShortMultiplyBy(const BigInt&) noexcept; // either this or rhs is lesser than 32 bits
+        constexpr BigInt& UnsignedMultiplyBy(const BigInt&) noexcept;
+
+        template<size_t small_word_capacity>
+        constexpr BigInt& KaratsubaMultiply(const BigInt&, size_t mid_thr, size_t end_thr) noexcept;
+
+        constexpr BigInt ShortUnsignedDivideBy(const BigInt&) noexcept; // returns remainder
+        constexpr BigInt UnsignedDivideBy(const BigInt&) noexcept; // returns remainder
 
     };
 
     // impl
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>::BigInt(int64_t from) noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>::BigInt(int64_t from) noexcept {
         if (from < 0) {
             is_positive = false;
             from = -from;
         }
 
-        binary[0] = from & ((1ull << 32) - 1);
-        TrySetWordsCount(1);
-
-        if (kWordCapacity > 1) {
-            binary[1] = from >> 32;
-            TrySetWordsCount(2);
+        if ((binary[0] = from & ((1ull << 32) - 1))) {
+            words_count = 1;
         }
-        binary.back() &= kFirstWordMask;
+
+        if (word_capacity > 1) {
+            if ((binary[1] = from >> 32)) {
+                words_count = 2;
+            }
+        }
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>::BigInt(std::string_view str) noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>::BigInt(std::string_view str) noexcept {
         if (str.size() == 0) {
             std::cerr << "Empty string" << std::endl;
             std::terminate();
@@ -115,42 +125,46 @@ namespace algo {
             for (size_t i = 0; i < str.size(); ++i) {
                 size_t idx = str.size() - 1 - i;
                 if (str[idx] == '1') {
-                    if (count > bit_size - 1) {
+                    set_bit(count);
+                    words_count = (count + 31) / 32;
+                }
+                if (str[idx] != '\'') {
+                    count += 1;
+                    if (count >= word_capacity * 32) {
                         std::cerr << "String is too long" << std::endl;
                         std::terminate();
                     }
-                    set_bit(count);
-                    TrySetWordsCount((count + 31) / 32);
-                }
-                if (str[i] != '\'') {
-                    count += 1;
                 }
             }
-
-            binary.back() &= kFirstWordMask;
         } else {
             std::cerr << "Only bytes are allowed" << std::endl;
             std::terminate();
         }
     }
 
-    template<size_t bit_size>
+    template<size_t word_capacity>
     template<typename It>
-        requires ( *It{} -> uint32_t )
-    constexpr BigInt<bit_size>::BigInt(It begin, It end, bool is_positive) noexcept
+        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+    constexpr BigInt<word_capacity>::BigInt(It begin, It end, bool is_positive) noexcept
         : is_positive{is_positive}
     {
         size_t counter = 1;
-        for (It it = begin; it != end; ++it, ++counter) {
-            if (*it > 0) {
+        auto set = binary.begin();
+        for (It it = begin; it != end; ++it, ++set, ++counter) {
+            if (counter > word_capacity) {
+                std::cerr << "Range is too big" << std::endl;
+                std::terminate();
+            }
+
+            if ((*set = *it)) {
                 words_count = counter;
             }
         }
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator<<=(size_t shift) noexcept {
-        if (shift >= bit_size) {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator<<=(size_t shift) noexcept {
+        if (shift >= word_capacity * 32) {
             std::cerr << "Shifting by more than size" << std::endl;
             std::terminate();
         }
@@ -170,21 +184,19 @@ namespace algo {
             return ret;
         };
 
-        bool set = false;
-        for (size_t i = 0; i < kWordCapacity; ++i) {
-            size_t idx = kWordCapacity - 1 - i;
-            binary[idx] = get_shifted_word(idx);
-            if (!set && TrySetWordsCount(idx + 1)) {
-                set = true;
+        words_count = 0;
+        for (size_t i = 0; i < word_capacity; ++i) {
+            size_t idx = word_capacity - 1 - i;
+            if ((binary[idx] = get_shifted_word(idx)) && words_count == 0) {
+                words_count = idx + 1;
             }
         }
-        binary.back() &= kFirstWordMask;
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator>>=(size_t shift) noexcept {
-        if (shift >= bit_size) {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator>>=(size_t shift) noexcept {
+        if (shift >= word_capacity * 32) {
             std::cerr << "Shifting by more than size" << std::endl;
             std::terminate();
         }
@@ -195,9 +207,9 @@ namespace algo {
         size_t bit_offset = shift % 32;
         auto get_shifted_word = [&](size_t idx) -> uint32_t {
             uint32_t ret = 0;
-            if (size_t shifted_idx = idx + word_offset; shifted_idx < kWordCapacity) {
+            if (size_t shifted_idx = idx + word_offset; shifted_idx < word_capacity) {
                 ret |= binary[shifted_idx] >> bit_offset;
-                if (bit_offset != 0 && shifted_idx + 1 < kWordCapacity) [[likely]] {
+                if (bit_offset != 0 && shifted_idx + 1 < word_capacity) [[likely]] {
                     ret |= binary[shifted_idx + 1] << (32 - bit_offset);
                 }
             }
@@ -205,72 +217,147 @@ namespace algo {
         };
 
         const size_t iterations = words_count;
+        words_count = 0;
         for (size_t i = 0; i < iterations; ++i) {
-            binary[i] = get_shifted_word(i);
-            TrySetWordsCount(i + 1);
+            if ((binary[i] = get_shifted_word(i))) {
+                words_count = i + 1;
+            }
         }
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> BigInt<bit_size>::operator<<(size_t shift_int) const noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::operator<<(size_t shift_int) const noexcept {
         return BigInt{*this} <<= shift_int;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> BigInt<bit_size>::operator>>(size_t shift_int) const noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::operator>>(size_t shift_int) const noexcept {
         return BigInt{*this} >>= shift_int;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> BigInt<bit_size>::operator-() const noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::operator-() const noexcept {
         BigInt copy = *this;
         copy.is_positive ^= true;
         return copy;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator+=(const BigInt& rhs) noexcept {
-        if (is_positive ^ rhs.is_positive) {
-            return *this -= -rhs;
+    template<size_t word_capacity>
+    template<typename It>
+        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedAddNonZeroEndingRange(It begin, It end) noexcept {
+        constexpr uint32_t first_bit_mask = 1u << 31;
+        uint32_t carry = 0;
+
+        size_t i = 0;
+        while (begin != end) {
+            if (i >= word_capacity) {
+                std::cerr << "Range is bigger than capacity" << std::endl;
+                std::terminate();
+            }
+            if (kMaxWord - carry >= *begin) {
+                uint32_t tmp = *begin + carry;
+                if (kMaxWord - binary[i] < tmp) {
+                    if (binary[i] >= first_bit_mask) {
+                        binary[i] ^= first_bit_mask;
+                    } else {
+                        tmp ^= first_bit_mask;
+                    }
+                    binary[i] += tmp;
+                    binary[i] ^= first_bit_mask;
+                    carry = 1;
+                } else {
+                    binary[i] += tmp;
+                    carry = 0;
+                }
+            }
+            ++begin;
+            ++i;
         }
 
-        const size_t iterations = std::max(words_count, rhs.words_count);
-        const uint32_t first_bit_mask = 1u << 31;
-        uint32_t carry = 0;
-        for (size_t i = 0; i < iterations; ++i) {
-            if (kMaxWord - carry < rhs.binary[i]) {
-                continue;
-            }
-
-            uint32_t tmp = rhs.binary[i] + carry;
-            if (kMaxWord - binary[i] < tmp) {
-                if (binary[i] >= first_bit_mask) {
-                    binary[i] ^= first_bit_mask;
-                } else {
-                    tmp ^= first_bit_mask;
-                }
-                binary[i] += tmp;
-                binary[i] ^= first_bit_mask;
-                carry = 1;
+        while (carry != 0 && i < word_capacity) {
+            if (kMaxWord - carry < binary[i]) {
+                binary[i] = 0;
             } else {
-                binary[i] += tmp;
+                binary[i] += carry;
                 carry = 0;
             }
-        }
-        if (iterations < kWordCapacity && carry) {
-            binary[iterations] = carry;
-            words_count = iterations + 1;
-        } else {
-            words_count = iterations;
+            ++i;
         }
 
-        binary.back() &= kFirstWordMask;
+        if (carry != 0) {
+            std::cerr << "Undefined behavior, addition" << std::endl;
+            std::terminate();
+        }
+
+        words_count = std::max(i, words_count);
+
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator-=(const BigInt& rhs) noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator+=(const BigInt& rhs) noexcept {
+        if (is_positive ^ rhs.is_positive) {
+            return *this -= -rhs;
+        }
+        return UnsignedAddNonZeroEndingRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+    }
+
+    template<size_t word_capacity>
+    template<typename It>
+        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedSubSmallerNonZeroEndingRange(It begin, It end) noexcept {
+        size_t old_words_count = words_count;
+        uint32_t borrow = 0;
+        size_t i = 0;
+        while (begin != end) {
+            if (kMaxWord - borrow < *begin) {
+                continue;
+            }
+
+            uint32_t tmp = *begin + borrow;
+            if (binary[i] < tmp) {
+                binary[i] += kMaxWord - tmp + 1;
+                borrow = 1;
+            } else {
+                binary[i] -= tmp;
+                borrow = 0;
+            }
+
+            if (binary[i]) {
+                words_count = i + 1;
+            }
+            ++begin;
+            ++i;
+        }
+
+        while (borrow && i < old_words_count) {
+            if (borrow > binary[i]) {
+                binary[i] = kMaxWord;
+                words_count = i + 1;
+            } else {
+                if ((binary[i] -= borrow)) {
+                    words_count = i + 1;
+                }
+                borrow = 0;
+            }
+            ++i;
+        }
+
+        if (borrow) {
+            std::cerr << "Undefined behavior sub" << std::endl;
+            std::terminate();
+        }
+
+        if (binary[old_words_count - 1]) {
+            words_count = old_words_count;
+        }
+        return *this;
+    }
+
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator-=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
             return *this += -rhs;
         }
@@ -287,318 +374,287 @@ namespace algo {
             return *this;
         }
 
-        uint32_t borrow = 0;
-        for (size_t i = 0; i < words_count; ++i) {
-            if (kMaxWord - borrow < rhs.binary[i]) {
-                continue;
-            }
+        return UnsignedSubSmallerNonZeroEndingRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+    }
 
-            uint32_t tmp = rhs.binary[i] + borrow;
-            if (binary[i] < tmp) {
-                binary[i] += kMaxWord - tmp + 1;
-                borrow = 1;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::ShortMultiplyBy(const BigInt& rhs) noexcept {
+        constexpr uint32_t first_bit_mask = 1u << 31;
+
+        uint32_t tmp_word = binary[0];
+        binary[0] = 0;
+        const size_t iterations = std::max(words_count, rhs.words_count);
+        for (size_t i = 0; i < iterations; ++i) {
+            uint64_t prod;
+            if (words_count == 1) {
+                prod = static_cast<uint64_t>(tmp_word) * rhs.binary[i];
             } else {
-                binary[i] -= tmp;
-                borrow = 0;
+                prod = static_cast<uint64_t>(tmp_word) * rhs.binary[0];
+                if (i + 1 < word_capacity) {
+                    tmp_word = binary[i + 1];
+                }
+            }
+            uint32_t prod_l = static_cast<uint32_t>(prod & kMaxWord);
+            uint32_t prod_h = static_cast<uint32_t>(prod >> 32);
+
+            if (i + 1 < word_capacity) {
+                binary[i + 1] = prod_h;
+            } else if (prod_h) {
+                std::cerr << "Overflow!" << std::endl;
+                std::terminate();
             }
 
-            if (binary[i]) {
-                words_count = i + 1;
+            if (kMaxWord - prod_l < binary[i]) {
+                if (prod_l > binary[i]) {
+                    prod_l ^= first_bit_mask;
+                } else {
+                    binary[i] ^= first_bit_mask;
+                }
+                binary[i] += prod_l;
+                binary[i] ^= first_bit_mask;
+
+                if (i + 1 < word_capacity) {
+                    binary[i + 1] += 1;
+                } else if (prod_h) {
+                    std::cerr << "Multiplication overflow" << std::endl;
+                    std::terminate();
+                }
+            } else {
+                binary[i] += prod_l;
             }
         }
-        binary.back() &= kFirstWordMask;
+
+        if (iterations < word_capacity && binary[iterations]) {
+            words_count = iterations + 1;
+        } else {
+            words_count = iterations;
+        }
+
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr bool BigInt<bit_size>::TrySetWordsCount(size_t val) noexcept {
-        if (val == 0) {
-            words_count = 0;
-        }
-        if (binary[val - 1] == 0) {
-            return false;
-        }
-        if (val == kWordCapacity && (binary.back() & kFirstWordMask) == 0) {
-            return false;
-        }
-        words_count = val;
-        return true;
+    template<size_t word_capacity>
+    template<size_t small_word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::KaratsubaMultiply(const BigInt& rhs, size_t mid_thr, size_t end_thr) noexcept {
+        BigInt<small_word_capacity> this_l {binary.begin(), binary.begin() + mid_thr};
+        BigInt<small_word_capacity> this_h {binary.begin() + mid_thr, binary.begin() + end_thr};
+        BigInt<small_word_capacity> rhs_l {rhs.binary.begin(), rhs.binary.begin() + mid_thr};
+        BigInt<small_word_capacity> rhs_h {rhs.binary.begin() + mid_thr, rhs.binary.begin() + end_thr};
+
+        BigInt<small_word_capacity> mix = (this_h + this_l) * (rhs_h + rhs_l);
+        this_h *= rhs_h;
+        this_l *= rhs_l;
+
+        size_t shift = mid_thr * 32;
+        *this = {this_h.binary.begin(), this_h.binary.begin() + this_h.words_count};
+        *this <<= shift;
+        UnsignedAddNonZeroEndingRange(mix.binary.begin(), mix.binary.begin() + mix.words_count);
+        UnsignedSubSmallerNonZeroEndingRange(this_h.binary.begin(), this_h.binary.begin() + this_h.words_count);
+        UnsignedSubSmallerNonZeroEndingRange(this_l.binary.begin(), this_l.binary.begin() + this_l.words_count);
+        *this <<= shift;
+        UnsignedAddNonZeroEndingRange(this_l.binary.begin(), this_l.binary.begin() + this_l.words_count);
+        return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::MultiplyUnsigned(const BigInt& rhs) noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedMultiplyBy(const BigInt& rhs) noexcept {
+        // Fast multiplication for powers of 2
+        if ((rhs & (rhs - 1)).words_count == 0) {
+            return *this <<= rhs.BitWidth() - 1;
+        }
+
+        // Case when multiplication can be done linearly, without extra stack allocation for temporary result
+        if (words_count == 1 || rhs.words_count == 1) {
+            return ShortMultiplyBy(rhs);
+        }
+
+        if constexpr (word_capacity <= 55) { // for small numbers do quadratic multiplication
+            BigInt ret;
+            for (size_t i = 0; i < words_count; ++i) {
+                BigInt tmp = static_cast<int64_t>(binary[i]);
+                tmp.ShortMultiplyBy(rhs);
+                tmp <<= i * 32;
+                ret += tmp;
+            }
+
+            return *this = ret;
+        } else {
+            // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
+            size_t max_wc = std::max(words_count, rhs.words_count);
+            size_t bottom_size = (max_wc + 1) / 2;
+            if (bottom_size + 1 < (word_capacity + 1) / 8) {
+                return KaratsubaMultiply<(word_capacity + 1) / 8 + 1>(rhs, bottom_size, max_wc);
+            }
+            if (bottom_size + 1 < (word_capacity + 1) / 4) {
+                return KaratsubaMultiply<(word_capacity + 1) / 4 + 1>(rhs, bottom_size, max_wc);
+            }
+            return KaratsubaMultiply<(word_capacity + 1) / 2 + 1>(rhs, bottom_size, max_wc);
+        }
+    }
+
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator*=(const BigInt& rhs) noexcept {
         if (rhs.words_count == 0 || words_count == 0) {
             binary = {};
             words_count = 0;
             return *this;
         }
 
-        is_positive ^= !rhs.is_positive;
-        if (rhs == 1) {
+        bool sign = is_positive ^ !rhs.is_positive;
+
+        if (rhs.words_count == 1 && rhs.binary[0] == 1) {
             return *this;
-        } else if (*this == 1) {
+        } else if (words_count == 1 && binary[0] == 1) {
             std::copy(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count, binary.begin());
             words_count = rhs.words_count;
             return *this;
         }
 
-        // Fast multiplication for powers of 2
-        if ((rhs & (rhs - 1)) == 0) {
-            return *this <<= rhs.BitWidth() - 1;
-        }
-
-        constexpr uint32_t first_bit_mask = 1u << 31;
-        const size_t bit_width = BitWidth();
-        const size_t rhs_bit_width = rhs.BitWidth();
-
-        // Case when multiplication can be done linearly, without extra stack allocation for temporary result
-        if (words_count == 1 || rhs.words_count == 1) {
-            uint32_t tmp_word = binary[0];
-            binary[0] = 0;
-            const size_t iterations = std::max(words_count, rhs.words_count);
-            for (size_t i = 0; i < iterations; ++i) {
-                uint64_t prod;
-                if (words_count == 1) {
-                    prod = static_cast<uint64_t>(tmp_word) * rhs.binary[i];
-                } else {
-                    prod = static_cast<uint64_t>(tmp_word) * rhs.binary[0];
-                    if (i + 1 < kWordCapacity) {
-                        tmp_word = binary[i + 1];
-                    }
-                }
-                uint32_t prod_l = static_cast<uint32_t>(prod & kMaxWord);
-                uint32_t prod_h = static_cast<uint32_t>(prod >> 32);
-
-                if (i + 1 < kWordCapacity) {
-                    binary[i + 1] = prod_h;
-                }
-
-                if (kMaxWord - prod_l < binary[i]) {
-                    if (prod_l > binary[i]) {
-                        prod_l ^= first_bit_mask;
-                    } else {
-                        binary[i] ^= first_bit_mask;
-                    }
-                    binary[i] += prod_l;
-                    binary[i] ^= first_bit_mask;
-
-                    if (i + 1 < kWordCapacity) {
-                        binary[i + 1] += 1;
-                    }
-                } else {
-                    binary[i] += prod_l;
-                }
-            }
-
-            if (iterations + 1 < kWordCapacity && binary[iterations + 1]) {
-                words_count = iterations + 2;
-            } else {
-                words_count = iterations + 1;
-            }
-
-            if (!(binary.back() &= kFirstWordMask) && words_count == kWordCapacity) {
-                words_count -= 1;
-            }
-
-            return *this;
-        }
-
-        if constexpr (bit_size <= 1024) { // for small numbers do quadratic multiplication
-            BigInt ret;
-            for (size_t i = 0; i < kWordCapacity; ++i) {
-                BigInt tmp;
-                for (size_t j = 0; j < kWordCapacity; ++j) {
-                    size_t idx = i + j;
-                    if (idx >= kWordCapacity) {
-                        break;
-                    }
-                
-                    uint64_t prod = static_cast<uint64_t>(binary[i]) * rhs.binary[j];
-                    uint32_t prod_l = static_cast<uint32_t>(prod & kMaxWord);
-                    uint32_t prod_h = static_cast<uint32_t>(prod >> 32);
-
-                    if (idx + 1 < kWordCapacity) {
-                        tmp.binary[idx + 1] = prod_h;
-                    }
-
-                    if (kMaxWord - prod_l < tmp.binary[idx]) {
-                        if (prod_l > tmp.binary[idx]) {
-                            prod_l ^= first_bit_mask;
-                        } else {
-                            tmp.binary[idx] ^= first_bit_mask;
-                        }
-                        tmp.binary[idx] += prod_l;
-                        tmp.binary[idx] ^= first_bit_mask;
-
-                        if (idx + 1 < kWordCapacity) {
-                            tmp.binary[idx + 1] += 1;
-                        }
-                    } else {
-                        tmp.binary[idx] += prod_l;
-                    }
-                }
-                ret += tmp;
-            }
-
-            *this = ret;
-            binary.back() &= kFirstWordMask;
-            return *this;
-        } else {
-            // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
-            size_t shift = std::max(bit_width, rhs_bit_width) / 2;
-            BigInt bottom_half = (BigInt{1} << shift) - 1;
-
-            BigInt this_l = *this & bottom_half;
-            BigInt this_h = *this >> shift;
-
-            BigInt rhs_l = rhs & bottom_half;
-            BigInt rhs_h = rhs >> shift;
-
-            BigInt h_h = this_h * rhs_h;
-            BigInt l_l = this_l * rhs_l;
-            BigInt mix = (this_h + this_l) * (rhs_h + rhs_l);
-
-            *this = (((h_h << shift) + mix - l_l - h_h) << shift) + l_l;
-            binary.back() &= kFirstWordMask;
-            return *this;
-        }
-    }
-
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator*=(const BigInt& rhs) noexcept {
-        return MultiplyUnsigned(rhs);
-    }
-
-    template<size_t bit_size>
-    constexpr std::pair<BigInt<bit_size>, BigInt<bit_size>> BigInt<bit_size>::DivideUnsigned(const BigInt& rhs) const noexcept {
-        if (rhs == 0) {
-            std::cerr << "Dividing by 0" << std::endl;
-            std::terminate();
-        } else if (*this == 0) {
-            return {0, 0};
-        } else if (rhs == 1) {
-            return {*this, 0};
-        } else if (rhs == 2) {
-            return {*this >> 1, binary[0] & 1};
-        } else if (*this == rhs) {
-            return {1, 0};
-        }
-
-        // fast division for powers of 2
-        if ((rhs & (rhs - 1)) == 0) {
-            return {*this >> (rhs.BitWidth() - 1), *this & (rhs - 1)};
-        }
-
-        // use binary search to find quotient
-        auto mul_greater = [](const BigInt& lhs, const BigInt& rhs, const BigInt& cmp) -> bool {
-            // multiply numbers, until it is clear that cmp is greater than their product
-
-            return false;
-        };
-
-        BigInt l = 1;
-        BigInt r = *this;
-
-        while (l < r - 1) {
-            BigInt m = (l + r) / 2; // shouldn't overflow
-            if (mul_greater(m, rhs, *this)) {
-                r = m - 1;
-            } else {
-                l = m;
-            }
-        }
-
-        return {l, *this - l * rhs};
-    }
-
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator/=(const BigInt& rhs) noexcept {
-        is_positive ^= !rhs.is_positive;
-        *this = DivideUnsigned(rhs).first;
+        UnsignedMultiplyBy(rhs);
+        is_positive = sign;
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator%=(const BigInt& rhs) noexcept {
-        if (rhs == 1) {
-            std::cerr << "Trying to take a remainder of dividing by 1" << std::endl;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::ShortUnsignedDivideBy(const BigInt& rhs) noexcept {
+        if (rhs.words_count != 1) {
+            std::cerr << "Unreachable" << std::endl;
             std::terminate();
         }
-        *this = DivideUnsigned(rhs).second;
-        return *this;
-    }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> BigInt<bit_size>::operator~() const noexcept {
         BigInt ret;
-        ret.is_positive = is_positive;
-        for (size_t i = 0; i < kWordCapacity; ++i) {
-            ret.binary[i] = ~binary[i];
-            if (ret.binary[i]) {
-                ret.words_count = i + 1;
+        bool set = false;
+        const size_t iterations = words_count;
+        uint64_t window = 0;
+        for (size_t i = 0; i < iterations; ++i) {
+            window = (window << 32) + binary[iterations - 1 - i];
+            if (window >= rhs.binary[0]) {
+                binary[iterations - 1 - i] = window / rhs.binary[0];
+                if (!set && binary[iterations - 1 - i]) {
+                    set = true;
+                    words_count = iterations - i;
+                }
+                window %= rhs.binary[0];
+            } else {
+                binary[iterations - 1 - i] = 0;
             }
         }
 
-        if (ret.binary.back() && !(ret.binary.back() &= kFirstWordMask)) {
-            ret.words_count -= 1;
+        if ((ret.binary[0] = static_cast<uint32_t>(window))) {
+            ret.words_count = 1;
         }
         return ret;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator^=(const BigInt& other) noexcept {
-        const size_t iterations = std::max(words_count, other.words_count);
-        for (size_t i = 0; i < iterations; ++i) {
-            binary[i] ^= other.binary[i];
-            if (binary[i]) {
-                words_count = i + 1;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::UnsignedDivideBy(const BigInt& rhs) noexcept {
+        if (rhs == 0) {
+            std::cerr << "Dividing by 0" << std::endl;
+            std::terminate();
+        } else if (words_count == 0) {
+            return 0;
+        } else if (rhs.words_count == 1 && rhs.binary[0] == 1) {
+            return 0;
+        } else if (rhs.words_count == 1 && rhs.binary[0] == 2) {
+            BigInt remainder = binary[0] & 1;
+            *this >>= 1;
+            return remainder;
+        } else if (words_count < rhs.words_count) {
+            BigInt remainder = *this;
+            *this = 0;
+            return remainder;
+        }
+
+        // fast division for powers of 2
+        if ((rhs & (rhs - 1)) == 0) {
+            BigInt remainder = *this & (rhs - 1);
+            *this >>= rhs.BitWidth() - 1;
+            return remainder;
+        }
+
+        if (rhs.words_count == 1) {
+            return ShortUnsignedDivideBy(rhs);
+        }
+
+        return 0;
+    }
+
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator/=(const BigInt& rhs) noexcept {
+        bool sign = is_positive ^ !rhs.is_positive;
+        UnsignedDivideBy(rhs);
+        is_positive = sign;
+        return *this;
+    }
+
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator%=(const BigInt& rhs) noexcept {
+        if (rhs == 1 || !rhs.is_positive) {
+            std::cerr << "Trying to take a remainder of dividing by 1 or negative number" << std::endl;
+            std::terminate();
+        }
+        bool sign = is_positive;
+        *this = UnsignedDivideBy(rhs);
+        is_positive = sign;
+        return *this;
+    }
+
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::operator~() const noexcept {
+        BigInt ret;
+        ret.is_positive = is_positive;
+        for (size_t i = 0; i < word_capacity; ++i) {
+            if ((ret.binary[i] = ~binary[i])) {
+                ret.words_count = i + 1;
             }
         }
-        if (binary.back() && !(binary.back() &= kFirstWordMask)) {
-            words_count -= 1;
+
+        return ret;
+    }
+
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator^=(const BigInt& other) noexcept {
+        const size_t iterations = std::max(words_count, other.words_count);
+        words_count = 0;
+        for (size_t i = 0; i < iterations; ++i) {
+            if ((binary[i] ^= other.binary[i])) {
+                words_count = i + 1;
+            }
         }
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator|=(const BigInt& other) noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator|=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
+        words_count = iterations;
         for (size_t i = 0; i < iterations; ++i) {
             binary[i] |= other.binary[i];
-            if (binary[i]) {
-                words_count = i + 1;
-            }
-        }
-        if (binary.back() && !(binary.back() &= kFirstWordMask)) {
-            words_count -= 1;
         }
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size>& BigInt<bit_size>::operator&=(const BigInt& other) noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::operator&=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
+        words_count = 0;
         for (size_t i = 0; i < iterations; ++i) {
-            binary[i] &= other.binary[i];
-            if (binary[i]) {
+            if ((binary[i] &= other.binary[i])) {
                 words_count = i + 1;
             }
-        }
-        if (binary.back() && !(binary.back() &= kFirstWordMask)) {
-            words_count -= 1;
         }
         return *this;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> BigInt<bit_size>::Power(size_t exp) const noexcept {
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::Power(size_t exp) const noexcept {
         if (exp == 0) {
             return 1;
         } else if (exp == 1) {
             return *this;
         }
 
-        BigInt<bit_size> tmp = Power(exp / 2);
+        BigInt<word_capacity> tmp = Power(exp / 2);
         if (exp % 2 == 0) {
             return tmp * tmp;
         } else {
@@ -606,40 +662,40 @@ namespace algo {
         }
     }
 
-    template<size_t bit_size>
-    constexpr size_t BigInt<bit_size>::BitWidth() const noexcept {
+    template<size_t word_capacity>
+    constexpr size_t BigInt<word_capacity>::BitWidth() const noexcept {
         if (words_count == 0) {
             return 0;
         }
 
-        return words_count * 32 + std::bit_width(binary[words_count - 1]);
+        return (words_count - 1) * 32 + std::bit_width(binary[words_count - 1]);
     }
 
-    template<size_t bit_size>
-    constexpr void BigInt<bit_size>::PrintBinary() const noexcept {
+    template<size_t word_capacity>
+    constexpr void BigInt<word_capacity>::PrintBinary() const noexcept {
         std::cerr << words_count << " ";
         if (is_positive) {
             std::cerr << "+ ";
         } else {
             std::cerr << "- ";
         }
-        for (size_t i = 0; i < kWordCapacity; ++i) {
+        for (size_t i = 0; i < word_capacity; ++i) {
             uint32_t n = 1u << 31;
             while (n != 0) {
-                std::cerr << (binary[kWordCapacity - 1 - i] & n ? 1 : 0);
+                std::cerr << (binary[word_capacity - 1 - i] & n ? 1 : 0);
                 n >>= 1;
             }
         }
         std::cerr << std::endl;
     }
 
-    template<size_t bit_size>
-    constexpr bool BigInt<bit_size>::operator==(const BigInt& rhs) const noexcept {
+    template<size_t word_capacity>
+    constexpr bool BigInt<word_capacity>::operator==(const BigInt& rhs) const noexcept {
         return (*this <=> rhs) == 0;
     }
 
-    template<size_t bit_size>
-    constexpr auto BigInt<bit_size>::operator<=>(const BigInt& rhs) const noexcept {
+    template<size_t word_capacity>
+    constexpr auto BigInt<word_capacity>::operator<=>(const BigInt& rhs) const noexcept {
         if (words_count == 0 && rhs.words_count == 0) {
             return std::strong_ordering::equal;
         } else if (words_count == 0) {
@@ -660,8 +716,8 @@ namespace algo {
             }
         }
 
-        for (size_t i = 0; i < kWordCapacity; ++i) {
-            size_t idx = kWordCapacity - 1 - i;
+        for (size_t i = 0; i < word_capacity; ++i) {
+            size_t idx = word_capacity - 1 - i;
             if (binary.at(idx) != rhs.binary.at(idx)) {
                 if (is_positive) {
                     return binary.at(idx) <=> rhs.binary.at(idx);
@@ -675,140 +731,140 @@ namespace algo {
     }
 
     // Arithmetic opeartors
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator+(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} += rhs;;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator+(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} += rhs;;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator+(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} += BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator+(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} += BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator+(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} += rhs;
+    constexpr BigInt<word_capacity> operator+(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} += rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator-(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} -= rhs;;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator-(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} -= rhs;;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator-(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} -= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator-(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} -= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator-(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} -= rhs;
+    constexpr BigInt<word_capacity> operator-(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} -= rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator*(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} *= rhs;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator*(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} *= rhs;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator*(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} *= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator*(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} *= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator*(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} *= rhs;
+    constexpr BigInt<word_capacity> operator*(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} *= rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator/(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} /= rhs;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator/(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} /= rhs;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator/(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} /= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator/(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} /= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator/(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} /= rhs;
+    constexpr BigInt<word_capacity> operator/(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} /= rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator%(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} %= rhs;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator%(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} %= rhs;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator%(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} %= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator%(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} %= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator%(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} %= rhs;
+    constexpr BigInt<word_capacity> operator%(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} %= rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator&(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} &= rhs;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator&(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} &= rhs;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator&(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} &= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator&(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} &= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator&(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} &= rhs;
+    constexpr BigInt<word_capacity> operator&(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} &= rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator|(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} |= rhs;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator|(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} |= rhs;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator|(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} |= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator|(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} |= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator|(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} |= rhs;
+    constexpr BigInt<word_capacity> operator|(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} |= rhs;
     }
 
-    template<size_t bit_size>
-    constexpr BigInt<bit_size> operator^(const BigInt<bit_size>& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{lhs} ^= rhs;
+    template<size_t word_capacity>
+    constexpr BigInt<word_capacity> operator^(const BigInt<word_capacity>& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} ^= rhs;
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator^(const BigInt<bit_size>& lhs, T&& rhs) noexcept {
-        return BigInt<bit_size>{lhs} ^= BigInt<bit_size>{std::forward<T>(rhs)};
+    constexpr BigInt<word_capacity> operator^(const BigInt<word_capacity>& lhs, T&& rhs) noexcept {
+        return BigInt<word_capacity>{lhs} ^= BigInt<word_capacity>{std::forward<T>(rhs)};
     }
 
-    template<size_t bit_size, typename T>
+    template<size_t word_capacity, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<bit_size> operator^(T&& lhs, const BigInt<bit_size>& rhs) noexcept {
-        return BigInt<bit_size>{std::forward<T>(lhs)} ^= rhs;
+    constexpr BigInt<word_capacity> operator^(T&& lhs, const BigInt<word_capacity>& rhs) noexcept {
+        return BigInt<word_capacity>{std::forward<T>(lhs)} ^= rhs;
     }
 
 } // namespace algo
