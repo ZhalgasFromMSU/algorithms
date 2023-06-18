@@ -23,6 +23,7 @@ enable_testing()
 
 add_executable(${PROJECT_NAME}
     bigint.cpp
+    field.cpp
 )
 
 target_link_libraries(${PROJECT_NAME} GTest::gtest_main Algorithm)

@@ -26,6 +26,8 @@ namespace algo {
         static constexpr uint32_t kMaxWord = std::numeric_limits<uint32_t>::max();
 
     public:
+        static constexpr size_t kWordCapacity = word_capacity;
+
         constexpr BigInt() noexcept = default;
         constexpr BigInt(int64_t integer) noexcept;
         constexpr BigInt(std::string_view str) noexcept;
