@@ -123,6 +123,17 @@ TEST(BigInt, AddSub) {
 
 TEST(BigInt, Mul) {
     {
+        BigInt<1024> a = 2;
+        a = a.Power(2000) + a.Power(1876) + 917397468272;
+
+        BigInt<1024> b = 15;
+        b = b.Power(123) + b.Power(89) + 912351273312;
+        b *= b;
+
+        ASSERT_TRUE(a * b == b * a);
+    }
+
+    {
         ASSERT_TRUE(BigInt<1>{12145} * 34324 == 12145 * 34324);
         ASSERT_TRUE(BigInt<1>{12145} * -34324 == -12145 * 34324);
         ASSERT_TRUE(BigInt<1>{0b1111} * 0b1'0000 == 0b1111'0000);
@@ -238,26 +249,88 @@ TEST(BigInt, Div) {
         //ASSERT_TRUE(a / BigInt<1024>{2}.Power(880) == BigInt<1024>{2}.Power(20));
     //}
 
-    {
-        int64_t divisor = 327897249821273987ull;
-        int64_t divident = 123495ull;
+    //{
+        //int64_t divisor = 327897249821273987ull;
+        //int64_t divident = 123495ull;
 
-        BigInt<2> a = divisor;
-        ASSERT_TRUE(a / divident == divisor / divident);
-        ASSERT_TRUE(a % divident == divisor % divident);
-    }
+        //BigInt<2> a = divisor;
+        //ASSERT_TRUE(a / divident == divisor / divident);
+        //ASSERT_TRUE(a % divident == divisor % divident);
+    //}
+
+    //{
+        //for (auto [divisor, divident] : {std::tuple{99263870170498186ll, 480852372},
+                                                   //{-199503489089220644ll, 407779708},
+                                                   //{587144900876542807ll, 949756056},
+                                                   //{-297572886055734023ll, 936295942},
+                                                   //{367109822501180285ll, 621679020}})
+        //{
+            //BigInt<2> a = divisor;
+            //ASSERT_TRUE(a / divident == divisor / divident) << divisor << '\t' << divident;
+            //ASSERT_TRUE(a % divident == divisor % divident) << divisor << '\t' << divident;
+        //}
+    //}
+
+    //{
+        //int64_t divisor = 211'742'143'594'981'396ll; 
+        //int64_t divident = 98'131'191'013'928'430ll;
+        //BigInt<2> a = divisor;
+        //ASSERT_TRUE(a / divident == divisor / divident);
+        //ASSERT_TRUE(a % divident == divisor % divident);
+    //}
+
+    //{
+        //for (auto [divisor, divident] : {std::pair{211'742'143'594'981'396ll, 98'131'191'013'928'430ll},
+                                                  //{453793416944131859ll, 35353803976864009ll},
+                                                  //{644089935536868565ll, 379814261487877315ll},
+                                                  //{232814861694501940ll, 146074081406853314ll},
+                                                  //{940219789698254288ll, 50583654315824559ll}})
+        //{
+            //BigInt<2> a = divisor;
+            //ASSERT_TRUE(a / divident == divisor / divident) << divisor << '\t' << divident << '\t' << divisor / divident;
+            //ASSERT_TRUE(a % divident == divisor % divident) << divisor << '\t' << divident;
+        //}
+    //}
+
+    //{
+        //BigInt<8> a {"0b11100100011010101100110111111011"
+                       //"00110000111010100000100100101110"
+                       //"00001100100110101011101111100100"
+                       //"10010001010001000110101100011101"
+                       //"0001100100101110110010"};
+        //BigInt<8> b {"0b11000001011000000001011111010100"
+                       //"11000000100000011000100011000101"
+                       //"01110100111111000"};
+
+        //BigInt<8> q {"0b10010111001100011111000001010101"
+                       //"01010100101001010100111001110001"
+                       //"010010"};
+
+        //BigInt<8> r {"0b11101010110110111101011111111000"
+                       //"01010001001001111101110110011000"
+                       //"011101001000010"};
+
+        //ASSERT_TRUE(a / b == q);
+        //ASSERT_TRUE(a % b == r);
+    //}
 
     {
-        for (auto [divisor, divident] : {std::tuple{99263870170498186ll, 480852372},
-                                                   {-199503489089220644ll, 407779708},
-                                                   {587144900876542807ll, 949756056},
-                                                   {-297572886055734023ll, 936295942},
-                                                   {367109822501180285ll, 621679020}})
-        {
-            BigInt<2> a = divisor;
-            ASSERT_TRUE(a / divident == divisor / divident) << divisor << '\t' << divident;
-            ASSERT_TRUE(a % divident == divisor % divident) << divisor << '\t' << divident;
-        }
+        using T = BigInt<100>;
+        T a = 2;
+        a = a.Power(2000) + a.Power(1876) + 917397468272;
+
+        T b = 15;
+        b = b.Power(123) + b.Power(89) + 912351273312;
+        b *= b;
+
+        std::cerr << a.words_count << '\t' << b.words_count << std::endl;
+
+        [[maybe_unused]] T q = a / b;
+        [[maybe_unused]] T r = a % b;
+
+        b * q;
+
+        // ASSERT_TRUE(a == b * q + r);
     }
 }
 

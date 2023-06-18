@@ -59,6 +59,7 @@ namespace algo {
         constexpr size_t BitWidth() const noexcept;
 
         constexpr void PrintBinary() const noexcept;
+        constexpr void PrintWords() const noexcept;
 
         bool is_positive = true;
         std::array<uint32_t, word_capacity> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
@@ -68,19 +69,19 @@ namespace algo {
     private:
         template<typename It>
             requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-        constexpr BigInt& UnsignedAddNonZeroEndingRange(It begin, It end) noexcept;
+        constexpr BigInt& UnsignedAddRange(It begin, It end) noexcept;
 
         template<typename It>
             requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-        constexpr BigInt& UnsignedSubSmallerNonZeroEndingRange(It begin, It end) noexcept;
+        constexpr BigInt& UnsignedSubSmallerRange(It begin, It end) noexcept;
 
         constexpr BigInt& ShortMultiplyBy(const BigInt&) noexcept; // either this or rhs is lesser than 32 bits
         constexpr BigInt& UnsignedMultiplyBy(const BigInt&) noexcept;
 
         template<size_t small_word_capacity>
-        constexpr BigInt& KaratsubaMultiply(const BigInt&, size_t mid_thr, size_t end_thr) noexcept;
+        constexpr BigInt& KaratsubaMultiply(const BigInt&) noexcept;
 
-        constexpr BigInt ShortUnsignedDivideBy(const BigInt&) noexcept; // returns remainder
+        constexpr BigInt ShortUnsignedDivideBy(uint32_t) noexcept; // returns remainder
         constexpr BigInt UnsignedDivideBy(const BigInt&) noexcept; // returns remainder
 
     };
@@ -246,10 +247,11 @@ namespace algo {
     template<size_t word_capacity>
     template<typename It>
         requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedAddNonZeroEndingRange(It begin, It end) noexcept {
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedAddRange(It begin, It end) noexcept {
         constexpr uint32_t first_bit_mask = 1u << 31;
         uint32_t carry = 0;
 
+        size_t old_words_count = words_count;
         size_t i = 0;
         while (begin != end) {
             if (i >= word_capacity) {
@@ -268,7 +270,9 @@ namespace algo {
                     binary[i] ^= first_bit_mask;
                     carry = 1;
                 } else {
-                    binary[i] += tmp;
+                    if ((binary[i] += tmp)) {
+                        words_count = i + 1;
+                    }
                     carry = 0;
                 }
             }
@@ -282,6 +286,7 @@ namespace algo {
             } else {
                 binary[i] += carry;
                 carry = 0;
+                words_count = i + 1;
             }
             ++i;
         }
@@ -291,7 +296,7 @@ namespace algo {
             std::terminate();
         }
 
-        words_count = std::max(i, words_count);
+        words_count = std::max(old_words_count, words_count);
 
         return *this;
     }
@@ -301,32 +306,34 @@ namespace algo {
         if (is_positive ^ rhs.is_positive) {
             return *this -= -rhs;
         }
-        return UnsignedAddNonZeroEndingRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+        return UnsignedAddRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
     }
 
     template<size_t word_capacity>
     template<typename It>
         requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedSubSmallerNonZeroEndingRange(It begin, It end) noexcept {
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::UnsignedSubSmallerRange(It begin, It end) noexcept {
         size_t old_words_count = words_count;
         uint32_t borrow = 0;
         size_t i = 0;
         while (begin != end) {
-            if (kMaxWord - borrow < *begin) {
-                continue;
+            if (i >= old_words_count) {
+                std::cerr << "Subtraction by greater value" << std::endl;
+                std::terminate();
             }
-
-            uint32_t tmp = *begin + borrow;
-            if (binary[i] < tmp) {
-                binary[i] += kMaxWord - tmp + 1;
-                borrow = 1;
-            } else {
-                binary[i] -= tmp;
-                borrow = 0;
-            }
-
-            if (binary[i]) {
-                words_count = i + 1;
+            if (kMaxWord - borrow >= *begin) {
+                uint32_t tmp = *begin + borrow;
+                if (binary[i] < tmp) {
+                    binary[i] += kMaxWord - tmp + 1;
+                    borrow = 1;
+                } else {
+                    binary[i] -= tmp;
+                    borrow = 0;
+                }
+    
+                if (binary[i]) {
+                    words_count = i + 1;
+                }
             }
             ++begin;
             ++i;
@@ -374,7 +381,7 @@ namespace algo {
             return *this;
         }
 
-        return UnsignedSubSmallerNonZeroEndingRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+        return UnsignedSubSmallerRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
     }
 
     template<size_t word_capacity>
@@ -435,7 +442,9 @@ namespace algo {
 
     template<size_t word_capacity>
     template<size_t small_word_capacity>
-    constexpr BigInt<word_capacity>& BigInt<word_capacity>::KaratsubaMultiply(const BigInt& rhs, size_t mid_thr, size_t end_thr) noexcept {
+    constexpr BigInt<word_capacity>& BigInt<word_capacity>::KaratsubaMultiply(const BigInt& rhs) noexcept {
+        size_t end_thr = std::max(words_count, rhs.words_count);
+        size_t mid_thr = (end_thr + 1) / 2;
         BigInt<small_word_capacity> this_l {binary.begin(), binary.begin() + mid_thr};
         BigInt<small_word_capacity> this_h {binary.begin() + mid_thr, binary.begin() + end_thr};
         BigInt<small_word_capacity> rhs_l {rhs.binary.begin(), rhs.binary.begin() + mid_thr};
@@ -448,11 +457,11 @@ namespace algo {
         size_t shift = mid_thr * 32;
         *this = {this_h.binary.begin(), this_h.binary.begin() + this_h.words_count};
         *this <<= shift;
-        UnsignedAddNonZeroEndingRange(mix.binary.begin(), mix.binary.begin() + mix.words_count);
-        UnsignedSubSmallerNonZeroEndingRange(this_h.binary.begin(), this_h.binary.begin() + this_h.words_count);
-        UnsignedSubSmallerNonZeroEndingRange(this_l.binary.begin(), this_l.binary.begin() + this_l.words_count);
+        UnsignedAddRange(mix.binary.begin(), mix.binary.begin() + mix.words_count);
+        UnsignedSubSmallerRange(this_h.binary.begin(), this_h.binary.begin() + this_h.words_count);
+        UnsignedSubSmallerRange(this_l.binary.begin(), this_l.binary.begin() + this_l.words_count);
         *this <<= shift;
-        UnsignedAddNonZeroEndingRange(this_l.binary.begin(), this_l.binary.begin() + this_l.words_count);
+        UnsignedAddRange(this_l.binary.begin(), this_l.binary.begin() + this_l.words_count);
         return *this;
     }
 
@@ -468,7 +477,7 @@ namespace algo {
             return ShortMultiplyBy(rhs);
         }
 
-        if constexpr (word_capacity <= 55) { // for small numbers do quadratic multiplication
+        if constexpr (word_capacity <= 75) { // for small numbers do quadratic multiplication
             BigInt ret;
             for (size_t i = 0; i < words_count; ++i) {
                 BigInt tmp = static_cast<int64_t>(binary[i]);
@@ -480,15 +489,16 @@ namespace algo {
             return *this = ret;
         } else {
             // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
-            size_t max_wc = std::max(words_count, rhs.words_count);
-            size_t bottom_size = (max_wc + 1) / 2;
-            if (bottom_size + 1 < (word_capacity + 1) / 8) {
-                return KaratsubaMultiply<(word_capacity + 1) / 8 + 1>(rhs, bottom_size, max_wc);
+            if (size_t max_size = words_count + rhs.words_count; max_size <= word_capacity / 16) {
+                return KaratsubaMultiply<word_capacity / 16 + 1>(rhs);
+            } else if (max_size <= word_capacity / 8) {
+                return KaratsubaMultiply<word_capacity / 8 + 1>(rhs);
+            } else if (max_size <= word_capacity / 4) {
+                return KaratsubaMultiply<word_capacity / 4 + 1>(rhs);
+            } else if (max_size <= word_capacity / 2) {
+                return KaratsubaMultiply<word_capacity / 2 + 1>(rhs);
             }
-            if (bottom_size + 1 < (word_capacity + 1) / 4) {
-                return KaratsubaMultiply<(word_capacity + 1) / 4 + 1>(rhs, bottom_size, max_wc);
-            }
-            return KaratsubaMultiply<(word_capacity + 1) / 2 + 1>(rhs, bottom_size, max_wc);
+            return KaratsubaMultiply<word_capacity>(rhs);
         }
     }
 
@@ -516,25 +526,20 @@ namespace algo {
     }
 
     template<size_t word_capacity>
-    constexpr BigInt<word_capacity> BigInt<word_capacity>::ShortUnsignedDivideBy(const BigInt& rhs) noexcept {
-        if (rhs.words_count != 1) {
-            std::cerr << "Unreachable" << std::endl;
-            std::terminate();
-        }
-
+    constexpr BigInt<word_capacity> BigInt<word_capacity>::ShortUnsignedDivideBy(uint32_t rhs) noexcept {
         BigInt ret;
         bool set = false;
         const size_t iterations = words_count;
         uint64_t window = 0;
         for (size_t i = 0; i < iterations; ++i) {
             window = (window << 32) + binary[iterations - 1 - i];
-            if (window >= rhs.binary[0]) {
-                binary[iterations - 1 - i] = window / rhs.binary[0];
+            if (window >= rhs) {
+                binary[iterations - 1 - i] = window / rhs;
                 if (!set && binary[iterations - 1 - i]) {
                     set = true;
                     words_count = iterations - i;
                 }
-                window %= rhs.binary[0];
+                window %= rhs;
             } else {
                 binary[iterations - 1 - i] = 0;
             }
@@ -565,6 +570,8 @@ namespace algo {
             return remainder;
         }
 
+        is_positive = rhs.is_positive;
+
         // fast division for powers of 2
         if ((rhs & (rhs - 1)) == 0) {
             BigInt remainder = *this & (rhs - 1);
@@ -573,7 +580,7 @@ namespace algo {
         }
 
         if (rhs.words_count == 1) {
-            return ShortUnsignedDivideBy(rhs);
+            return ShortUnsignedDivideBy(rhs.binary[0]);
         }
 
         auto unsigned_cmp = []<size_t cap>(const BigInt<cap>& lhs, const BigInt<cap>& rhs) {
@@ -597,35 +604,56 @@ namespace algo {
             while (l != r) {
                 int64_t m = (l + r) / 2;
                 BigInt tmp = *this;
-                BigInt remainder = tmp.UnsignedDivideBy(m);
-                if (remainder.words_count == 0) {
+                tmp.ShortUnsignedDivideBy(m);
+
+                if (auto cmp = unsigned_cmp(tmp, rhs); cmp == 0) {
                     *this = m;
                     return 0;
-                } else if (auto cmp = unsigned_cmp(tmp, rhs); cmp == 0) {
-                    
+                } else if (cmp < 0) {
+                    r = m - 1;
                 } else {
-
+                    BigInt rmndr = *this - rhs * m;
+                    if (auto cmp = unsigned_cmp(rmndr, rhs); cmp < 0) {
+                        *this = m;
+                        return rmndr;
+                    }
+                    l = m + 1;
                 }
             }
-            return ShortUnsignedDivideBy(l);
+            auto remainder = *this - rhs * l;
+            *this = l;
+            return remainder;
         }
 
         BigInt quotient;
         BigInt remainder = binary[words_count - 1];
-        remainder <<= 32 * (words_count - 1);
 
         const size_t iterations = words_count;
         for (size_t i = 0; i < iterations; ++i) {
             size_t idx = iterations - 1 - i;
-            if (unsigned_ge(*this, remainder)) {
-                
+            if (unsigned_cmp(remainder, rhs) >= 0) {
+                BigInt tmp = remainder;
+                if (tmp.words_count - rhs.words_count > 1) {
+                    std::cerr << "Temporary divisor and divident should differ less" << std::endl;
+                    std::terminate();
+                }
+                remainder = tmp.UnsignedDivideBy(rhs);
+                if (tmp.words_count > 1) {
+                    std::cerr << "Quotient longer than 1 word" << std::endl;
+                    std::terminate();
+                }
+                if ((quotient.binary[idx] = tmp.binary[0]) && quotient.words_count == 0) {
+                    quotient.words_count = idx + 1;
+                }
             } else {
                 quotient.binary[idx] = 0;
             }
             if (idx > 0) {
-                remainder += BigInt(binary[idx - 1]) << (32 * (idx - 1));
+                remainder <<= 32;
+                remainder += binary[idx - 1];
             }
         }
+        *this = quotient;
         return remainder;
     }
 
@@ -719,6 +747,23 @@ namespace algo {
         }
 
         return (words_count - 1) * 32 + std::bit_width(binary[words_count - 1]);
+    }
+
+    template<size_t word_capacity>
+    constexpr void BigInt<word_capacity>::PrintWords() const noexcept {
+        std::cerr << words_count << " ";
+        if (is_positive) {
+            std::cerr << "+ ";
+        } else {
+            std::cerr << "- ";
+        }
+        for (size_t i = 0; i < word_capacity; ++i) {
+            if (i != 0) {
+                std::cerr << "'";
+            }
+            std::cerr << binary[word_capacity - 1 - i];
+        }
+        std::cerr << std::endl;
     }
 
     template<size_t word_capacity>
