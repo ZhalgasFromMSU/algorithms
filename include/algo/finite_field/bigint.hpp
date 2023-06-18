@@ -576,7 +576,57 @@ namespace algo {
             return ShortUnsignedDivideBy(rhs);
         }
 
-        return 0;
+        auto unsigned_cmp = []<size_t cap>(const BigInt<cap>& lhs, const BigInt<cap>& rhs) {
+            if (auto cmp = lhs.words_count <=> rhs.words_count; cmp != 0) {
+                return cmp;
+            }
+
+            for (size_t i = 0; i < lhs.words_count; ++i) {
+                size_t idx = lhs.words_count - 1 - i;
+                if (auto cmp = lhs.binary[idx] <=> rhs.binary[idx]; cmp != 0) {
+                    return cmp;
+                }
+            }
+            return std::strong_ordering::equal;
+        };
+
+        if (words_count - rhs.words_count <= 1) {
+            // binary search
+            int64_t l = 1;
+            int64_t r = kMaxWord;
+            while (l != r) {
+                int64_t m = (l + r) / 2;
+                BigInt tmp = *this;
+                BigInt remainder = tmp.UnsignedDivideBy(m);
+                if (remainder.words_count == 0) {
+                    *this = m;
+                    return 0;
+                } else if (auto cmp = unsigned_cmp(tmp, rhs); cmp == 0) {
+                    
+                } else {
+
+                }
+            }
+            return ShortUnsignedDivideBy(l);
+        }
+
+        BigInt quotient;
+        BigInt remainder = binary[words_count - 1];
+        remainder <<= 32 * (words_count - 1);
+
+        const size_t iterations = words_count;
+        for (size_t i = 0; i < iterations; ++i) {
+            size_t idx = iterations - 1 - i;
+            if (unsigned_ge(*this, remainder)) {
+                
+            } else {
+                quotient.binary[idx] = 0;
+            }
+            if (idx > 0) {
+                remainder += BigInt(binary[idx - 1]) << (32 * (idx - 1));
+            }
+        }
+        return remainder;
     }
 
     template<size_t word_capacity>
