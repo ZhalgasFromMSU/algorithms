@@ -63,7 +63,7 @@ namespace algo {
 
         bool is_positive = true;
         std::array<uint32_t, word_capacity> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
-                                                      // can't use bitset here, because not constexp (since C++23)
+                                                         // can't use bitset here, because not constexp (since C++23)
         size_t words_count = 0;
 
     private:
@@ -121,13 +121,13 @@ namespace algo {
             str.remove_prefix(2);
             auto set_bit = [this](size_t bit_idx) {
                 binary[bit_idx / 32] |= 1u << (bit_idx % 32);
+                words_count = bit_idx / 32 + 1;
             };
             size_t count = 0;
             for (size_t i = 0; i < str.size(); ++i) {
                 size_t idx = str.size() - 1 - i;
                 if (str[idx] == '1') {
                     set_bit(count);
-                    words_count = (count + 31) / 32;
                 }
                 if (str[idx] != '\'') {
                     count += 1;
@@ -477,7 +477,7 @@ namespace algo {
             return ShortMultiplyBy(rhs);
         }
 
-        if constexpr (word_capacity <= 75) { // for small numbers do quadratic multiplication
+        if constexpr (word_capacity <= 40) { // for small numbers do quadratic multiplication
             BigInt ret;
             for (size_t i = 0; i < words_count; ++i) {
                 BigInt tmp = static_cast<int64_t>(binary[i]);
@@ -553,7 +553,7 @@ namespace algo {
 
     template<size_t word_capacity>
     constexpr BigInt<word_capacity> BigInt<word_capacity>::UnsignedDivideBy(const BigInt& rhs) noexcept {
-        if (rhs == 0) {
+        if (rhs.words_count == 0) {
             std::cerr << "Dividing by 0" << std::endl;
             std::terminate();
         } else if (words_count == 0) {
@@ -599,7 +599,7 @@ namespace algo {
 
         if (words_count - rhs.words_count <= 1) {
             // binary search
-            int64_t l = 1;
+            int64_t l = 0;
             int64_t r = kMaxWord;
             while (l != r) {
                 int64_t m = (l + r) / 2;

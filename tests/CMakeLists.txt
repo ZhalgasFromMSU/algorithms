@@ -30,3 +30,5 @@ target_link_libraries(${PROJECT_NAME} GTest::gtest_main Algorithm)
 include(GoogleTest)
 gtest_discover_tests(${PROJECT_NAME})
 
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/test_data.txt
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
