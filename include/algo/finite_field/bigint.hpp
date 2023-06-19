@@ -17,7 +17,9 @@ namespace algo {
     struct IsBigInt : std::false_type {};
 
     template<size_t word_capacity>
-    struct IsBigInt<BigInt<word_capacity>> : std::true_type {};
+    struct IsBigInt<BigInt<word_capacity>> : std::true_type {
+        static constexpr size_t kWordCapacity = word_capacity;
+    };
 
     template<size_t word_capacity>
     class BigInt {
@@ -26,8 +28,6 @@ namespace algo {
         static constexpr uint32_t kMaxWord = std::numeric_limits<uint32_t>::max();
 
     public:
-        static constexpr size_t kWordCapacity = word_capacity;
-
         constexpr BigInt() noexcept = default;
         constexpr BigInt(int64_t integer) noexcept;
         constexpr BigInt(std::string_view str) noexcept;
@@ -59,6 +59,8 @@ namespace algo {
         constexpr BigInt Power(size_t exp) const noexcept;
 
         constexpr size_t BitWidth() const noexcept;
+        constexpr const uint32_t* cbegin() const noexcept;
+        constexpr const uint32_t* cend() const noexcept;
 
         constexpr void PrintBinary() const noexcept;
         constexpr void PrintWords() const noexcept;
@@ -749,6 +751,16 @@ namespace algo {
         }
 
         return (words_count - 1) * 32 + std::bit_width(binary[words_count - 1]);
+    }
+
+    template<size_t word_capacity>
+    constexpr const uint32_t* BigInt<word_capacity>::cbegin() const noexcept {
+        return binary.begin();
+    }
+
+    template<size_t word_capacity>
+    constexpr const uint32_t* BigInt<word_capacity>::cend() const noexcept {
+        return binary.cbegin() + words_count;
     }
 
     template<size_t word_capacity>

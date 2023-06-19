@@ -1,6 +1,7 @@
 #pragma once
 
 #include "bigint.hpp"
+
 #include <bit>
 
 namespace algo {
@@ -16,8 +17,7 @@ namespace algo {
 
         constexpr ModuloField& operator+=(const ModuloField&) noexcept;
         constexpr ModuloField& operator-=(const ModuloField&) noexcept;
-        constexpr ModuloField& operator*=(const ModuloField&) noexcept requires (IsBigInt<T>::value);
-        constexpr ModuloField& operator*=(const ModuloField&) noexcept requires (std::is_same_v<T, int64_t>);
+        constexpr ModuloField& operator*=(const ModuloField&) noexcept;
         constexpr ModuloField& operator/=(const ModuloField&) noexcept;
 
         constexpr ModuloField Power(T exp) const noexcept;
@@ -28,8 +28,6 @@ namespace algo {
     private:
         constexpr void Normalize() noexcept;
     };
-
-    // specializations
 
     // impl
     template<typename T, T mod, T pr>
@@ -59,28 +57,26 @@ namespace algo {
     }
 
     template<typename T, T mod, T pr>
-    constexpr ModuloField<T, mod, pr>& ModuloField<T, mod, pr>::operator*=(const ModuloField& rhs) noexcept requires (IsBigInt<T>::value) {
-        if (value.words_count + rhs.value.words_count >= T::kWordCapacity) {
-            BigInt<T::kWordCapacity * 2> ret {value.binary.begin(), value.binary.begin() + value.words_count};
-            ret *= BigInt<T::kWordCapacity * 2>{rhs.value.binary.begin(), rhs.value.binary.begin() + rhs.value.words_count};
-            ret %= BigInt<T::kWordCapacity * 2>{mod.binary.begin(), mod.binary.begin() + mod.words_count};
-            value = {ret.binary.begin(), ret.binary.begin() + ret.words_count};
+    constexpr ModuloField<T, mod, pr>& ModuloField<T, mod, pr>::operator*=(const ModuloField& rhs) noexcept {
+        if constexpr (IsBigInt<T>::value) {
+            if (value.words_count + rhs.value.words_count >= IsBigInt<T>::kWordCapacity) {
+                using BufferType = BigInt<IsBigInt<T>::kWordCapacity * 2>;
+                BufferType ret {value.cbegin(), value.cend()};
+                ret *= BufferType {rhs.value.cbegin(), rhs.value.cend()};
+                ret %= BufferType {mod.cbegin(), mod.cend()};
+                value = BufferType {ret.cbegin(), ret.cend()};
+            } else {
+                value *= rhs.value;
+            }
         } else {
-            value *= rhs.value;
-        }
-        Normalize();
-        return *this;
-    }
-
-    template<typename T, T mod, T pr>
-    constexpr ModuloField<T, mod, pr>& ModuloField<T, mod, pr>::operator*=(const ModuloField& rhs) noexcept requires (std::is_same_v<T, int64_t>) {
-        if (std::bit_width(value) + std::bit_width(rhs.value) > 63) {
-            BigInt<4> ret {value};
-            ret *= rhs.value;
-            ret %= mod;
-            value = (static_cast<int64_t>(ret.binary[1]) << 32) + ret.binary[0];
-        } else {
-            value *= rhs.value;
+            if (std::bit_width(value) + std::bit_width(rhs.value) > 63) {
+                BigInt<4> ret {value};
+                ret *= rhs.value;
+                ret %= mod;
+                value = (static_cast<int64_t>(ret.binary[1]) << 32) + ret.binary[0];
+            } else {
+                value *= rhs.value;
+            }
         }
         Normalize();
         return *this;
@@ -92,7 +88,7 @@ namespace algo {
     }
 
     template<typename T, T mod, T pr>
-    constexpr ModuloField<T, mod, pr> ModuloField<T, mod, pr>::Power(T exp) const noexcept {
+    constexpr ModuloField<T, mod, pr> ModuloField<T, mod, pr>::Power(size_t exp) const noexcept {
         if (exp < 0) {
             return Reversed().Power(-exp);
         }
