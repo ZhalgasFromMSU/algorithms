@@ -56,6 +56,11 @@ TEST(BigInt, Shift) {
         a <<= 1;
         ASSERT_TRUE(a == 0);
     }
+
+    {
+        BigInt<2> a {1ull << 31};
+        ASSERT_TRUE((a << 1) == (1ull << 32));
+    }
 }
 
 TEST(BigInt, AddSub) {
