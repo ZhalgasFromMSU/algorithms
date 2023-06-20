@@ -21,6 +21,9 @@ namespace algo {
         static constexpr size_t kWordCapacity = words_capacity;
     };
 
+    template<typename T>
+    concept IntIter = std::is_same_v<std::remove_cvref_t<decltype(*T{})>, uint32_t>;
+
     template<size_t words_capacity>
     class BigInt {
         static_assert(words_capacity > 0);
@@ -32,8 +35,7 @@ namespace algo {
         constexpr BigInt(int64_t integer) noexcept;
         constexpr BigInt(std::string_view str) noexcept;
 
-        template<typename It>
-            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+        template<IntIter It>
         constexpr BigInt(It begin, It end, bool is_positive = true) noexcept;
 
         constexpr bool operator==(const BigInt&) const noexcept;
@@ -73,22 +75,28 @@ namespace algo {
         size_t words_count = 0;
 
     private:
-        template<typename It>
-            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-        constexpr BigInt& UnsignedAddRange(It begin, It end) noexcept;
+        template<IntIter It>
+        constexpr void UnsignedResetBinary(It begin, It end) noexcept;
 
-        template<typename It>
-            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-        constexpr BigInt& UnsignedSubSmallerRange(It begin, It end) noexcept;
+        template<IntIter It>
+        constexpr void UnsignedAddRange(It begin, It end) noexcept;
 
-        template<typename It>
-            requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-        constexpr void UnsignedShortMultiplyBy(It begin, It end) noexcept; // either this or rhs is lesser than 32 bits
+        template<IntIter It>
+        constexpr void UnsignedSubSmallerRange(It begin, It end) noexcept;
 
-        constexpr void UnsignedMultiplyBy(const BigInt&) noexcept;
+        template<IntIter It>
+        constexpr void UnsignedShortMultiplyByRange(It begin, It end) noexcept; // either this or rhs is lesser than 32 bits
+
+        template<size_t subint_words_capacity, IntIter It>
+        constexpr void KaratsubaMultiplyByRange(It begin, It end) noexcept;
 
         template<size_t small_words_capacity>
         constexpr void KaratsubaMultiply(const BigInt&) noexcept;
+
+        template<IntIter It>
+        constexpr void UnsignedMultiplyByRange(It begin, It end) noexcept;
+
+        constexpr void UnsignedMultiplyBy(const BigInt&) noexcept;
 
         constexpr BigInt ShortUnsignedDivideBy(uint32_t) noexcept; // returns remainder
         constexpr BigInt UnsignedDivideBy(const BigInt&) noexcept; // returns remainder
@@ -134,10 +142,16 @@ namespace algo {
             };
             size_t count = 0;
             for (size_t i = 0; i < str.size(); ++i) {
+                if (str[i] != '0' && str[i] != '1' && str[i] != '\'') {
+                    std::cerr << "Invalid binary format" << std::endl;
+                    std::terminate();
+                }
+
                 size_t idx = str.size() - 1 - i;
                 if (str[idx] == '1') {
                     set_bit(count);
                 }
+
                 if (str[idx] != '\'') {
                     count += 1;
                     if (count >= words_capacity * 32) {
@@ -146,15 +160,29 @@ namespace algo {
                     }
                 }
             }
-        } else {
-            std::cerr << "Only bytes are allowed" << std::endl;
-            std::terminate();
+        } else if (str.size() > 0) {
+            const uint32_t ten[] = {10};
+            uint32_t buffer[] = {0};
+
+            for (size_t i = 0; i < str.size(); ++i) {
+                if (str[i] == '\'') {
+                    continue;
+                }
+
+                if (str[i] >= '0' && str[i] <= '9') {
+                    buffer[0] = str[i] - '0';
+                    UnsignedShortMultiplyByRange(ten, ten + 1);
+                    UnsignedAddRange(buffer, buffer + 1);
+                } else {
+                    std::cerr << "Invalid decimal format" << std::endl;
+                    std::terminate();
+                }
+            }
         }
     }
 
     template<size_t words_capacity>
-    template<typename It>
-        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
+    template<IntIter It>
     constexpr BigInt<words_capacity>::BigInt(It begin, It end, bool is_positive) noexcept
         : is_positive{is_positive}
     {
@@ -256,9 +284,17 @@ namespace algo {
     }
 
     template<size_t words_capacity>
-    template<typename It>
-        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::UnsignedAddRange(It begin, It end) noexcept {
+    template<IntIter It>
+    constexpr void BigInt<words_capacity>::UnsignedResetBinary(It begin, It end) noexcept {
+        words_count = 0;
+        while (begin != end) {
+            binary[words_count++] = *begin;
+        }
+    }
+
+    template<size_t words_capacity>
+    template<IntIter It>
+    constexpr void BigInt<words_capacity>::UnsignedAddRange(It begin, It end) noexcept {
         constexpr uint32_t first_bit_mask = 1u << 31;
         uint32_t carry = 0;
 
@@ -308,8 +344,6 @@ namespace algo {
         }
 
         words_count = std::max(old_words_count, words_count);
-
-        return *this;
     }
 
     template<size_t words_capacity>
@@ -317,13 +351,13 @@ namespace algo {
         if (is_positive ^ rhs.is_positive) {
             return *this -= -rhs;
         }
-        return UnsignedAddRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+        UnsignedAddRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+        return *this;
     }
 
     template<size_t words_capacity>
-    template<typename It>
-        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::UnsignedSubSmallerRange(It begin, It end) noexcept {
+    template<IntIter It>
+    constexpr void BigInt<words_capacity>::UnsignedSubSmallerRange(It begin, It end) noexcept {
         size_t old_words_count = words_count;
         uint32_t borrow = 0;
         size_t i = 0;
@@ -371,50 +405,46 @@ namespace algo {
         if (binary[old_words_count - 1]) {
             words_count = old_words_count;
         }
-        return *this;
     }
 
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator-=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
-            return *this += -rhs;
+            UnsignedAddRange(rhs.cbegin(), rhs.cend());
+            return *this;
         }
 
         if (auto cmp = *this <=> rhs; cmp == 0) {
-            binary = {};
-            words_count = 0;
-            return *this;
+            return *this = {};
         } else if ((cmp > 0 && !is_positive) || (cmp < 0 && is_positive)) {
-            BigInt tmp = *this;
-            *this = rhs;
-            *this -= tmp;
-            is_positive ^= true;
-            return *this;
+            return *this = -(rhs - *this);
         }
 
-        return UnsignedSubSmallerRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+        UnsignedSubSmallerRange(rhs.binary.begin(), rhs.binary.begin() + rhs.words_count);
+        return *this;
     }
 
     template<size_t words_capacity>
-    template<typename It>
-        requires( std::is_same_v<std::remove_cvref_t<decltype(*It{})>, uint32_t> )
-    constexpr void BigInt<words_capacity>::UnsignedShortMultiplyBy(It begin, It end) noexcept {
+    template<IntIter It>
+    constexpr void BigInt<words_capacity>::UnsignedShortMultiplyByRange(It begin, It end) noexcept {
         constexpr uint32_t first_bit_mask = 1u << 31;
 
         // It is possible that &rhs == this, so values are storred in buffer
         uint32_t lhs_word_buf = binary[0];
         uint32_t rhs_word_buf = *begin;
 
+        const size_t old_words_count = words_count;
+        words_count = 0;
         binary[0] = 0;
         size_t i = 0;
-        while (begin != end || i < words_count) {
+        while (begin != end || i < old_words_count) {
             if (begin != end) {
                 ++begin; // value already stored in buffer
             }
             uint64_t prod = lhs_word_buf;
             prod *= rhs_word_buf;
             if (i + 1 < words_capacity) {
-                if (words_count == 1 && begin != end) {
+                if (old_words_count == 1 && begin != end) {
                     rhs_word_buf = *begin;
                 } else {
                     lhs_word_buf = binary[i + 1];
@@ -446,16 +476,64 @@ namespace algo {
                     std::terminate();
                 }
             } else {
-                binary[i] += prod_l;
+                if ((binary[i] += prod_l)) {
+                    words_count = i + 1;
+                }
             }
             ++i;
         }
 
         if (i < words_capacity && binary[i]) {
             words_count = i + 1;
-        } else {
-            words_count = i;
         }
+    }
+
+    template<size_t _>
+    template<size_t subint_words_capacity, IntIter It>
+    constexpr void BigInt<_>::KaratsubaMultiplyByRange(It begin, It end) noexcept {
+        using SmallInt = BigInt<subint_words_capacity>;
+
+        size_t range_size = end - begin;
+        size_t end_thr = std::max(words_count, range_size);
+        size_t mid_thr = (end_thr + 1) / 2;
+        SmallInt lower_halves;  // lhs_l * rhs_l
+        SmallInt upper_halves;  // lhs_h * rhs_h
+        SmallInt mix;           // (lhs_l + lhs_h) * (rhs_l + rhs_h)
+                                // return 2^N * (2^N * upper_halves + mix - upper_halves - lower_halves) + lower_halves
+
+        auto add_range = [](SmallInt* target_lower, SmallInt* target_upper, IntIter auto begin, size_t mid_thr, size_t range_size) {
+            if (range_size <= mid_thr) {
+                target_lower->UnsignedAddRange(begin, begin + range_size);
+            } else {
+                target_lower->UnsignedAddRange(begin, begin + mid_thr);
+                target_upper->UnsignedAddRange(begin + mid_thr, begin + range_size);
+            }
+        };
+
+        add_range(&lower_halves, &upper_halves, cbegin(), mid_thr, words_count);
+        add_range(&mix, &mix, begin, mid_thr, range_size);
+
+        {
+            SmallInt tmp = lower_halves;
+            add_range(&tmp, &tmp, cbegin(), mid_thr, words_count);
+            mix.UnsignedMultiplyByRange(tmp.cbegin(), tmp.cend());
+        }
+
+        if (range_size <= mid_thr) {
+            lower_halves.UnsignedMultiplyByRange(begin, end);
+            upper_halves.UnsignedResetBinary(end, end);
+        } else {
+            lower_halves.UnsignedMultiplyByRange(begin, begin + mid_thr);
+            upper_halves.UnsignedMultiplyByRange(begin + mid_thr, end);
+        }
+
+        UnsignedResetBinary(upper_halves.cbegin(), upper_halves.cend());
+        *this <<= mid_thr * 32;
+        UnsignedAddRange(mix.cbegin(), mix.cend());
+        UnsignedSubSmallerRange(upper_halves.cbegin(), upper_halves.cend());
+        UnsignedSubSmallerRange(lower_halves.cbegin(), lower_halves.cend());
+        *this <<= mid_thr * 32;
+        UnsignedAddRange(lower_halves.cbegin(), lower_halves.cend());
     }
 
     template<size_t words_capacity>
@@ -489,7 +567,7 @@ namespace algo {
             *this <<= rhs.BitWidth() - 1;
         } else if (words_count == 1 || rhs.words_count == 1) {
             // Case when multiplication can be done linearly, without extra stack allocation for temporary result
-            UnsignedShortMultiplyBy(rhs.cbegin(), rhs.cend());
+            UnsignedShortMultiplyByRange(rhs.cbegin(), rhs.cend());
         } else if constexpr (words_capacity <= 40) {
             // for small numbers do quadratic multiplication
             size_t old_words_count = words_count;
@@ -497,7 +575,7 @@ namespace algo {
             binary = {};
             for (size_t i = 0; i < old_words_count; ++i) {
                 BigInt tmp = rhs;
-                tmp.UnsignedShortMultiplyBy(binary_copy.begin() + i, binary_copy.begin() + i + 1);
+                tmp.UnsignedShortMultiplyByRange(binary_copy.begin() + i, binary_copy.begin() + i + 1);
                 tmp <<= i * 32;
                 UnsignedAddRange(tmp.cbegin(), tmp.cend());
             }
@@ -874,140 +952,150 @@ namespace algo {
     }
 
     // Arithmetic opeartors
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator+(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} += rhs;;
+    template<size_t c>
+    constexpr BigInt<c> operator+(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs += rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator+(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} += BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator+(const BigInt<c>& lhs, T&& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(rhs)} + lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator+(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} += rhs;
+    constexpr BigInt<c> operator+(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} + rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator-(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} -= rhs;;
+    template<size_t c>
+    constexpr BigInt<c> operator-(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs -= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator-(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} -= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator-(const BigInt<c>& lhs, T&& rhs) noexcept {
+        return -(BigInt<c>{std::forward<T>(rhs)} - lhs);
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator-(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} -= rhs;
+    constexpr BigInt<c> operator-(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} - rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator*(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} *= rhs;
+    template<size_t c>
+    constexpr BigInt<c> operator*(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs *= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator*(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} *= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator*(const BigInt<c>& lhs, T&& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(rhs)} * lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator*(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} *= rhs;
+    constexpr BigInt<c> operator*(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} * rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator/(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} /= rhs;
+    template<size_t c>
+    constexpr BigInt<c> operator/(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs /= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator/(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} /= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator/(BigInt<c> lhs, T&& rhs) noexcept {
+        lhs /= BigInt<c>{std::forward<T>(rhs)};
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator/(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} /= rhs;
+    constexpr BigInt<c> operator/(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} / rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator%(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} %= rhs;
+    template<size_t c>
+    constexpr BigInt<c> operator%(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs %= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator%(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} %= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator%(BigInt<c> lhs, T&& rhs) noexcept {
+        lhs %= BigInt<c>{std::forward<T>(rhs)};
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator%(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} %= rhs;
+    constexpr BigInt<c> operator%(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} % rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator&(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} &= rhs;
+    template<size_t c>
+    constexpr BigInt<c> operator&(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs &= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator&(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} &= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator&(const BigInt<c>& lhs, T&& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(rhs)} & lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator&(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} &= rhs;
+    constexpr BigInt<c> operator&(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} & rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator|(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} |= rhs;
+    template<size_t c>
+    constexpr BigInt<c> operator|(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs |= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator|(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} |= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator|(const BigInt<c>& lhs, T&& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(rhs)} | lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator|(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} |= rhs;
+    constexpr BigInt<c> operator|(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} | rhs;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> operator^(const BigInt<words_capacity>& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} ^= rhs;
+    template<size_t c>
+    constexpr BigInt<c> operator^(BigInt<c> lhs, const BigInt<c>& rhs) noexcept {
+        lhs ^= rhs;
+        return lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator^(const BigInt<words_capacity>& lhs, T&& rhs) noexcept {
-        return BigInt<words_capacity>{lhs} ^= BigInt<words_capacity>{std::forward<T>(rhs)};
+    constexpr BigInt<c> operator^(const BigInt<c>& lhs, T&& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(rhs)} ^ lhs;
     }
 
-    template<size_t words_capacity, typename T>
+    template<size_t c, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<words_capacity> operator^(T&& lhs, const BigInt<words_capacity>& rhs) noexcept {
-        return BigInt<words_capacity>{std::forward<T>(lhs)} ^= rhs;
+    constexpr BigInt<c> operator^(T&& lhs, const BigInt<c>& rhs) noexcept {
+        return BigInt<c>{std::forward<T>(lhs)} ^ rhs;
     }
 
 } // namespace algo
