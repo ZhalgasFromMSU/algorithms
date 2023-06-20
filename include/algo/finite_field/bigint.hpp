@@ -287,8 +287,13 @@ namespace algo {
     template<IntIter It>
     constexpr void BigInt<words_capacity>::UnsignedResetBinary(It begin, It end) noexcept {
         words_count = 0;
+        size_t counter = 0;
         while (begin != end) {
-            binary[words_count++] = *begin;
+            if ((binary[counter] = *begin)) {
+                words_count = counter + 1;
+            }
+            ++counter;
+            ++begin;
         }
     }
 
