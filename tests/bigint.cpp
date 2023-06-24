@@ -251,6 +251,19 @@ TEST(BigInt, Div) {
     }
 
     {
+        ASSERT_TRUE(BigInt<1>{3} / 10 == 0);        
+
+        int64_t a = 386273648273648432ll;
+        BigInt<2> b {a};
+        while (a != 0) {
+            ASSERT_TRUE(b % 10 == a % 10);
+            b /= 10;
+            a /= 10;
+        }
+        ASSERT_TRUE(b.IsZero());
+    }
+
+    {
         int64_t h = 2143523;
         int64_t l = 123245;
         int64_t exp = 1ull << 32;
@@ -338,8 +351,6 @@ TEST(BigInt, Div) {
         T b = 15;
         b = b.Power(123) + b.Power(89) + 912351273312;
         b *= b;
-
-        std::cerr << a.words_count << '\t' << b.words_count << std::endl;
 
         T q = a / b;
         T r = a % b;
