@@ -69,6 +69,7 @@ namespace algo {
         constexpr const uint32_t* cbegin() const noexcept;
         constexpr const uint32_t* cend() const noexcept;
 
+        constexpr void PrintDecimal() const noexcept;
         constexpr void PrintBinary() const noexcept;
         constexpr void PrintWords() const noexcept;
 
@@ -871,28 +872,31 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr void BigInt<words_capacity>::PowerInner(BigInt& res, BigInt&& exp, const BigInt& mod) const noexcept {
+        // Might return value bigger than mod
         if (exp.IsZero()) {
             res = 1;
         } else if (exp.IsOne()) {
-            if (this >= mod) {
-                res = *this % mod;
-            } else {
-                res = *this;
-            }
+            res = *this;
         } else {
             bool isOdd = exp.binary[0] & 1;
             PowerInner(res, std::move(exp >>= 1), mod);
-            if (res.words_count + mod.words_count > words_capacity) {
+            if (res.words_count * 2 > words_capacity) {
                 BigInt<2 * words_capacity> tmp {res.cbegin(), res.cend()};
                 tmp *= tmp;
                 tmp %= {mod.cbegin(), mod.cend()};
-                tmp >>= words_capacity;
                 res.UnsignedResetBinary(tmp.cbegin(), tmp.cend());
             } else {
                 res *= res;
             }
             if (isOdd) {
-                res *= *this;
+                if (res.words_count + words_count > words_capacity) {
+                    BigInt<2 * words_capacity> tmp {res.cbegin(), res.cend()};
+                    tmp.UnsignedMultiplyByRange(cbegin(), cend());
+                    tmp %= {mod.cbegin(), mod.cend()};
+                    res.UnsignedResetBinary(tmp.cbegin(), tmp.cend());
+                } else {
+                    res *= *this;
+                }
             }
         }
     }
@@ -964,6 +968,11 @@ namespace algo {
         if constexpr (std::random_access_iterator<It>) {
             It it = end - 1;
             size_t counter = end - begin;
+            if (counter > words_capacity) {
+                std::cerr << "Range is bigger than capacity" << std::endl;
+                std::terminate();
+            }
+
             while (it != begin) {
                 if (*it != 0) {
                     return counter;
@@ -994,6 +1003,24 @@ namespace algo {
     }
 
     template<size_t words_capacity>
+    constexpr void BigInt<words_capacity>::PrintDecimal() const noexcept {
+        char ret[words_capacity * 32];
+        size_t counter = 0;
+        BigInt copy = *this;
+        while (!copy.IsZero()) {
+            ret[counter] = '0' + static_cast<char>((copy % 10).binary[0]);
+            copy /= 10;
+            ++counter;
+        }
+        char reversed[words_capacity * 32 / 3];
+        for (size_t i = 0; i < counter; ++i) {
+            reversed[i] = ret[counter - 1 - i];
+        }
+        reversed[counter] = '\0';
+        std::cerr << reversed << std::endl;
+    }
+
+    template<size_t words_capacity>
     constexpr void BigInt<words_capacity>::PrintBinary() const noexcept {
         std::cerr << words_count << " ";
         if (is_positive) {
@@ -1013,8 +1040,6 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr bool BigInt<words_capacity>::operator==(const BigInt& rhs) const noexcept {
-        PrintWords();
-        rhs.PrintWords();
         return (*this <=> rhs) == 0;
     }
 

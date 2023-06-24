@@ -18,6 +18,12 @@ TEST(BigInt, BigInt) {
     }
 
     {
+        std::string s = "92387645823763198673492876134987126489346791287631349786458971236934867";
+        BigInt<1024> a{s};
+        a.PrintDecimal();
+    }
+
+    {
         BigInt<1> a {13};
         ASSERT_TRUE(a == 13);
         ASSERT_TRUE(a != 14);
@@ -400,9 +406,13 @@ TEST(BigInt, File) {
 
 TEST(BigInt, Algebra) {
     // https://oeis.org/A000043
-    BigInt<64> bigPrime = BigInt<64>{2}.Power(1279) - 1;
-    bigPrime.PrintWords();
+    BigInt<64> bigPrime = BigInt<64>{2}.Power(89) - 1;
+    {
+        BigInt<64> tmp = BigInt<64>{9}.Power(bigPrime - 1, bigPrime);
+        tmp.PrintWords();
+        ASSERT_TRUE(tmp == 1);
+    }
     for (int i = 2; i < 1000; ++i) {
-        ASSERT_TRUE(BigInt<64>{i}.Power(bigPrime - 1) % bigPrime == 1) << i;
+        ASSERT_TRUE(BigInt<64>{i}.Power(bigPrime - 1, bigPrime) == 1) << i;
     }
 }
