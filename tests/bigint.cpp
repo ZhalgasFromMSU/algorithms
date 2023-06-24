@@ -397,3 +397,12 @@ TEST(BigInt, File) {
         ASSERT_TRUE(lhs % rhs == rmod) << "Line: " << i;
     }
 }
+
+TEST(BigInt, Algebra) {
+    // https://oeis.org/A000043
+    BigInt<64> bigPrime = BigInt<64>{2}.Power(1279) - 1;
+    bigPrime.PrintWords();
+    for (int i = 2; i < 1000; ++i) {
+        ASSERT_TRUE(BigInt<64>{i}.Power(bigPrime - 1) % bigPrime == 1) << i;
+    }
+}
