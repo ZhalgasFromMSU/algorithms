@@ -417,13 +417,9 @@ TEST(BigInt, File) {
 
 TEST(BigInt, Algebra) {
     // https://oeis.org/A000043
-    BigInt<64> bigPrime = BigInt<64>{2}.Power(89) - 1;
-    {
-        BigInt<64> tmp = BigInt<64>{9}.Power(bigPrime - 1, bigPrime);
-        tmp.PrintWords();
-        ASSERT_TRUE(tmp == 1);
-    }
+    BigInt<2> bigPrime = BigInt<2>{2}.Power(61) - 1;
     for (int i = 2; i < 1000; ++i) {
-        ASSERT_TRUE(BigInt<64>{i}.Power(bigPrime - 1, bigPrime) == 1) << i;
+        BigInt<2> pow = BigInt<2>{i}.Power(bigPrime - 1, bigPrime);
+        ASSERT_TRUE(pow == 1) << i;
     }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algo/util/assert.hpp>
+
 #include <compare>
 #include <exception>
 #include <iostream>
@@ -138,10 +140,7 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>::BigInt(std::string_view str) noexcept {
-        if (str.size() == 0) {
-            std::cerr << "Empty string" << std::endl;
-            std::terminate();
-        }
+        ASSERT(str.size() != 0);
 
         if (str[0] == '-') {
             is_positive = false;
@@ -156,10 +155,7 @@ namespace algo {
             };
             size_t count = 0;
             for (size_t i = 0; i < str.size(); ++i) {
-                if (str[i] != '0' && str[i] != '1' && str[i] != '\'') {
-                    std::cerr << "Invalid binary format" << std::endl;
-                    std::terminate();
-                }
+                ASSERT(str[i] == '0' || str[i] == '1' || str[i] == '\'');
 
                 size_t idx = str.size() - 1 - i;
                 if (str[idx] == '1') {
@@ -168,10 +164,7 @@ namespace algo {
 
                 if (str[idx] != '\'') {
                     count += 1;
-                    if (count >= words_capacity * 32) {
-                        std::cerr << "String is too long" << std::endl;
-                        std::terminate();
-                    }
+                    ASSERT(count < words_capacity * 32);
                 }
             }
         } else if (str.size() > 0) {
@@ -183,14 +176,10 @@ namespace algo {
                     continue;
                 }
 
-                if (str[i] >= '0' && str[i] <= '9') {
-                    buffer[0] = str[i] - '0';
-                    UnsignedShortMultiplyByRange(ten, ten + 1);
-                    UnsignedAddRange(buffer, buffer + 1);
-                } else {
-                    std::cerr << "Invalid decimal format" << std::endl;
-                    std::terminate();
-                }
+                ASSERT(str[i] >= '0' && str[i] <= '9');
+                buffer[0] = str[i] - '0';
+                UnsignedShortMultiplyByRange(ten, ten + 1);
+                UnsignedAddRange(buffer, buffer + 1);
             }
         }
     }
@@ -203,11 +192,7 @@ namespace algo {
         size_t counter = 1;
         auto set = binary.begin();
         for (It it = begin; it != end; ++it, ++set, ++counter) {
-            if (counter > words_capacity) {
-                std::cerr << "Range is too big" << std::endl;
-                std::terminate();
-            }
-
+            ASSERT(counter <= words_capacity);
             if ((*set = *it)) {
                 words_count = counter;
             }
@@ -216,10 +201,7 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator<<=(size_t shift) noexcept {
-        if (shift >= words_capacity * 32) {
-            std::cerr << "Shifting by more than size" << std::endl;
-            std::terminate();
-        }
+        ASSERT(shift < words_capacity * 32);
 
         if (shift == 0) {
             return *this;
@@ -250,10 +232,7 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator>>=(size_t shift) noexcept {
-        if (shift >= words_capacity * 32) {
-            std::cerr << "Shifting by more than size" << std::endl;
-            std::terminate();
-        }
+        ASSERT(shift < words_capacity * 32);
         if (shift == 0) {
             return *this;
         }
@@ -324,10 +303,7 @@ namespace algo {
         size_t old_words_count = words_count;
         size_t i = 0;
         while (begin != end) {
-            if (i >= words_capacity) {
-                std::cerr << "Range is bigger than capacity" << std::endl;
-                std::terminate();
-            }
+            ASSERT(i < words_capacity);
             if (kMaxWord - carry >= *begin) {
                 uint32_t tmp = *begin + carry;
                 if (kMaxWord - binary[i] < tmp) {
@@ -361,11 +337,7 @@ namespace algo {
             ++i;
         }
 
-        if (carry != 0) {
-            std::cerr << "Addition overflow" << std::endl;
-            std::terminate();
-        }
-
+        ASSERT(carry == 0);
         words_count = std::max(old_words_count, words_count);
     }
 
@@ -385,10 +357,7 @@ namespace algo {
         uint32_t borrow = 0;
         size_t i = 0;
         while (begin != end) {
-            if (i >= old_words_count) {
-                std::cerr << "Subtraction by greater value" << std::endl;
-                std::terminate();
-            }
+            ASSERT(i < old_words_count);
             if (kMaxWord - borrow >= *begin) {
                 uint32_t tmp = *begin + borrow;
                 if (binary[i] < tmp) {
@@ -420,10 +389,7 @@ namespace algo {
             ++i;
         }
 
-        if (borrow) {
-            std::cerr << "Undefined behavior sub" << std::endl;
-            std::terminate();
-        }
+        ASSERT(!borrow);
 
         if (binary[old_words_count - 1]) {
             words_count = old_words_count;
@@ -478,9 +444,8 @@ namespace algo {
 
             if (i + 1 < words_capacity) {
                 binary[i + 1] = prod_h;
-            } else if (prod_h) {
-                std::cerr << "Multiplication Overflow" << std::endl;
-                std::terminate();
+            } else {
+                ASSERT(!prod_h);
             }
 
             if (kMaxWord - prod_l < binary[i]) {
@@ -492,12 +457,8 @@ namespace algo {
                 binary[i] += prod_l;
                 binary[i] ^= first_bit_mask;
 
-                if (i + 1 < words_capacity) {
-                    binary[i + 1] += 1;
-                } else {
-                    std::cerr << "Multiplication overflow" << std::endl;
-                    std::terminate();
-                }
+                ASSERT(i + 1 < words_capacity);
+                binary[i + 1] += 1;
             } else {
                 if ((binary[i] += prod_l)) {
                     words_count = i + 1;
@@ -635,10 +596,7 @@ namespace algo {
     template<IntIter It>
     constexpr BigInt<words_capacity> BigInt<words_capacity>::UnsignedDivideByRange(It begin, It end) noexcept {
         size_t range_words_count = RangeWordsCount(begin, end);
-        if (range_words_count > words_count) {
-            std::cerr << "Dividing by larger number" << std::endl;
-            std::terminate();
-        }
+        ASSERT(range_words_count <= words_count);
 
         if (range_words_count == 1) {
             return ShortUnsignedDivideBy(*begin);
@@ -655,6 +613,8 @@ namespace algo {
                 if (auto cmp = *lhs_rend <=> *rhs_rend; cmp != 0) {
                     return cmp;
                 }
+                --lhs_rend;
+                --rhs_rend;
             }
 
             return *lhs_begin <=> *rhs_begin;
@@ -693,32 +653,25 @@ namespace algo {
             UnsignedResetBinary(m, m + 1);
             return remainder;
         } else {
-            BigInt{begin, end}.PrintWords();
-            BigInt remainder = *this;
             const size_t old_words_count = words_count;
-            UnsignedResetBinary(end, end);
-            BigInt tmp;
+            BigInt remainder;
+            bool set = false;
             for (size_t i = 0; i < old_words_count; ++i) {
                 size_t idx = old_words_count - 1 - i;
-                tmp <<= 32;
-                tmp.UnsignedAddRange(remainder.cbegin() + idx, remainder.cbegin() + idx + 1);
-                if (unsigned_cmp(tmp.cbegin(), tmp.cend(), begin, begin + range_words_count) >= 0) {
-                    if (tmp.words_count - range_words_count > 1) {
-                        std::cerr << "Unreachable" << std::endl;
-                        std::terminate();
+                remainder <<= 32;
+                remainder.UnsignedAddRange(cbegin() + idx, cbegin() + idx + 1);
+                if (unsigned_cmp(remainder.cbegin(), remainder.cend(), begin, begin + range_words_count) >= 0) {
+                    ASSERT(remainder.words_count - range_words_count <= 1);
+                    BigInt tmp = remainder;
+                    remainder = tmp.UnsignedDivideByRange(begin, begin + range_words_count);
+                    ASSERT(tmp.words_count <= 1);
+                    binary[idx] = tmp.words_count == 1 ? tmp.binary[0] : 0;
+                    if (!set) {
+                        words_count = idx + 1;
+                        set = true;
                     }
-                    BigInt small_remainder = tmp.UnsignedDivideByRange(begin, begin + range_words_count);
-                    if (tmp.words_count > 1) {
-                        std::cerr << "Unreachable" << std::endl;
-                        std::terminate();
-                    }
-                    *this <<= 32;
-                    UnsignedAddRange(tmp.cbegin(), tmp.cend());
-                    small_remainder <<= idx * 32;
-                    remainder.UnsignedSubSmallerRange(small_remainder.cbegin(), small_remainder.cend());
-                    tmp.UnsignedResetBinary(small_remainder.cbegin(), small_remainder.cend());
                 } else {
-                    *this <<= 32;
+                    binary[idx] = 0;
                 }
             }
             return remainder;
@@ -727,10 +680,8 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator/=(const BigInt& rhs) noexcept {
-        if (rhs.IsZero()) {
-            std::cerr << "Dividing by 0" << std::endl;
-            std::terminate();
-        } else if (IsZero() || rhs.IsOne()) {
+        ASSERT(!rhs.IsZero());
+        if (IsZero() || rhs.IsOne()) {
             return *this;
         } else if (words_count < rhs.words_count) {
             return *this = 0;
@@ -747,13 +698,9 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator%=(const BigInt& rhs) noexcept {
-        if (rhs.IsZero()) {
-            std::cerr << "Dividing by 0" << std::endl;
-            std::terminate();
-        } else if (rhs.IsOne() || !rhs.is_positive) {
-            std::cerr << "Remainder of dividing by 1 or by negative number" << std::endl;
-            std::terminate();
-        } else if (IsZero() || words_count < rhs.words_count) {
+        ASSERT(!rhs.IsZero());
+        ASSERT(!rhs.IsOne() && rhs.is_positive);
+        if (IsZero() || words_count < rhs.words_count) {
             return *this;
         } else if (rhs.IsPowerOf2()) {
             return *this &= rhs - 1;
@@ -857,7 +804,7 @@ namespace algo {
             if (res.words_count * 2 > words_capacity) {
                 BigInt<2 * words_capacity> tmp {res.cbegin(), res.cend()};
                 tmp *= tmp;
-                tmp %= {mod.cbegin(), mod.cend()};
+                tmp = tmp.UnsignedDivideByRange(mod.cbegin(), mod.cend());
                 res.UnsignedResetBinary(tmp.cbegin(), tmp.cend());
             } else {
                 res *= res;
@@ -942,10 +889,7 @@ namespace algo {
         if constexpr (std::random_access_iterator<It>) {
             It it = end - 1;
             size_t counter = end - begin;
-            if (counter > words_capacity) {
-                std::cerr << "Range is bigger than capacity" << std::endl;
-                std::terminate();
-            }
+            ASSERT(counter <= words_capacity);
 
             while (it != begin) {
                 if (*it != 0) {
@@ -962,10 +906,7 @@ namespace algo {
             size_t counter = 1;
             size_t ret = 0;
             for (It it = begin; it != end; ++it) {
-                if (counter >= words_capacity) {
-                    std::cerr << "Range is bigger than capacity" << std::endl;
-                    std::terminate();
-                }
+                ASSERT(counter < words_capacity);
 
                 if (*it != 0) {
                     ret = counter;
@@ -1014,8 +955,6 @@ namespace algo {
 
     template<size_t words_capacity>
     constexpr bool BigInt<words_capacity>::operator==(const BigInt& rhs) const noexcept {
-        PrintWords();
-        rhs.PrintWords();
         return (*this <=> rhs) == 0;
     }
 
