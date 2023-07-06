@@ -23,6 +23,7 @@ enable_testing()
 
 add_executable(${PROJECT_NAME}
     bigint.cpp
+    string.cpp
     # field.cpp
 )
 

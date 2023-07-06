@@ -1,6 +1,6 @@
 #pragma once
 
-#include <algo/util/assert.hpp>
+#include <helpers/assert.hpp>
 
 #include <compare>
 #include <exception>
@@ -515,15 +515,14 @@ namespace algo {
             UnsignedShortMultiplyByRange(begin, begin + range_words_count);
         } else if constexpr (words_capacity <= 40) {
             // for small numbers do quadratic multiplication
-            size_t old_words_count = words_count;
-            std::array<uint32_t, words_capacity> binary_copy = binary;
-            binary = {};
-            for (size_t i = 0; i < old_words_count; ++i) {
+            BigInt ret;
+            for (size_t i = 0; i < words_count; ++i) {
                 BigInt tmp {begin, begin + range_words_count};
-                tmp.UnsignedShortMultiplyByRange(binary_copy.begin() + i, binary_copy.begin() + i + 1);
+                tmp.UnsignedShortMultiplyByRange(cbegin() + i, cbegin() + i + 1);
                 tmp <<= i * 32;
-                UnsignedAddRange(tmp.cbegin(), tmp.cend());
+                ret.UnsignedAddRange(tmp.cbegin(), tmp.cend());
             }
+            UnsignedResetBinary(ret.cbegin(), ret.cend());
         } else {
             // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
             if (size_t max_size = words_count + range_words_count; max_size <= words_capacity / 16) {
@@ -624,33 +623,33 @@ namespace algo {
             // binary search
             uint32_t l = 0;
             uint32_t r = kMaxWord;
-            uint32_t m[2];
+            uint32_t m;
             while (l != r) {
-                m[0] = (l / 2) + (r / 2) + (l & r & 1);
-                BigInt<words_capacity + 1> tmp {m[0]};
+                m = (l / 2) + (r / 2) + (l & r & 1);
+                BigInt<words_capacity + 1> tmp {m};
                 tmp.UnsignedMultiplyByRange(begin, begin + range_words_count);
                 if (auto cmp = unsigned_cmp(tmp.cbegin(), tmp.cend(), cbegin(), cend()); cmp == 0) {
-                    UnsignedResetBinary(m, m + 1);
+                    UnsignedResetBinary(&m, &m + 1);
                     return 0;
                 } else if (cmp > 0) {
-                    r = m[0] - 1;
+                    r = m - 1;
                 } else {
                     BigInt remainder = *this;
                     remainder.UnsignedSubSmallerRange(tmp.cbegin(), tmp.cend());
                     if (unsigned_cmp(remainder.cbegin(), remainder.cend(), begin, begin + range_words_count) < 0) {
-                        UnsignedResetBinary(m, m + 1);
+                        UnsignedResetBinary(&m, &m + 1);
                         return remainder;
                     } else {
-                        l = m[0] + 1;
+                        l = m + 1;
                     }
                 }
             }
-            m[0] = l;
-            BigInt tmp {m[0]};
+            m = l;
+            BigInt tmp {m};
             tmp.UnsignedMultiplyByRange(begin, begin + range_words_count);
             BigInt remainder = *this;
             remainder.UnsignedSubSmallerRange(tmp.cbegin(), tmp.cend());
-            UnsignedResetBinary(m, m + 1);
+            UnsignedResetBinary(&m, &m + 1);
             return remainder;
         } else {
             const size_t old_words_count = words_count;
