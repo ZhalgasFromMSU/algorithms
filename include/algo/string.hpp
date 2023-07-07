@@ -3,23 +3,39 @@
 #include <helpers/result.hpp>
 #include <helpers/assert.hpp>
 
+#include <type_traits>
 #include <vector>
 #include <string>
 #include <tuple>
+#include <iterator>
 
 namespace algo {
 
-    /*
-     * Populates provided vector with sizes of biggest palindromes centered in corresponding positions.
-     * E.g. ret[i] == size of a biggest palindrome centered in i.
-     * For even-sized palindromes, i - is left leaned center
-     */
-    void MaxPalindromes(std::ranges::random_access_range auto&& view, std::vector<size_t>* ret) noexcept {
+    class String {
+    public:
+        /*
+         * Return vector, consisting of sizes of biggest palindromes centered at corresponding position
+         * e.g. ret[i] is a size of a biggest palindromes, centered at i
+         * For even-sized palindromes, i is a left leaned center
+         *
+         * First overload returns error if couldn't allocate resulting vector
+         * Second overload populates provided buffer, which size should be greater or equal than size of view
+         */
+        static Result<std::vector<size_t>> MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept;
+        static void MaxPalindromes(std::ranges::random_access_range auto&& view,
+                                   std::random_access_iterator auto&& buffer) noexcept
+                                        requires (std::is_same_v<std::remove_reference_t<decltype(*buffer)>, size_t>);
+    };
+
+    // Implementation
+    void String::MaxPalindromes(std::ranges::random_access_range auto&& view,
+                                std::random_access_iterator auto&& buffer) noexcept
+                                    requires (std::is_same_v<std::remove_reference_t<decltype(*buffer)>, size_t>)
+    {
         // https://e-maxx.ru/algo/palindromes_count
         static constexpr size_t npos = -1;
 
         size_t n = std::ranges::size(view);
-        ret->resize(n);
         auto data = std::ranges::begin(view);
 
         auto left_bound_from_size = [&](size_t pos, size_t size) -> size_t {
@@ -36,9 +52,9 @@ namespace algo {
         auto biggest_palindrome = [&](size_t pos, size_t initial_size) -> std::pair<size_t, size_t> {
             // try to find biggest palindrome centered at pos. Returns left boundary and size of palindrome
             // tries to do so by linearly increasing possible size, starting at initial_size
-            ASSERT(initial_size > 0);
+            ASSERT(initial_size > 0); // single word is always palindrome
             size_t l = left_bound_from_size(pos, initial_size);
-            size_t size = initial_size; // single word is always palindrome
+            size_t size = initial_size;
             bool odd_size_possible = true;
             bool even_size_possible = true;
             while (true) {
@@ -82,14 +98,14 @@ namespace algo {
             return {l, size};
         };
 
-        size_t l {0}, r{0}; // borders of right most palindrome
-        (*ret)[0] = 1;
+        size_t l {0}, r {0}; // borders of right most palindrome
+        buffer[0] = 1;
         for (size_t i = 1; i < n; ++i) {
             size_t size;
             if (i >= r) {
                 std::tie(l, size) = biggest_palindrome(i, 1);
             } else {
-                size_t possible_size = (*ret)[l + i - r]; // size of inversed palindrome
+                size_t possible_size = buffer[l + i - r]; // size of inversed palindrome
                 if (i + possible_size / 2 >= r) {
                     std::tie(l, size) = biggest_palindrome(i, (r - i) * 2 + 1);
                 } else {
@@ -98,26 +114,20 @@ namespace algo {
             }
 
             r = l + size - 1;
-            (*ret)[i] = size;
+            buffer[i] = size;
         }
     }
 
-    /*
-     * Return vector, with i-th element being size of a biggest palindrome centered in i-th element.
-     * For even-sized palindromes, i - is left leaned center
-     *
-     * Returns error if allocation of storage for resulting vector failed
-     */
-    Result<std::vector<size_t>> MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept {
+    Result<std::vector<size_t>> String::MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept {
         std::vector<size_t> ret;
 
         try {
-            ret.reserve(std::ranges::size(view));
+            ret.resize(std::ranges::size(view));
         } catch (const std::bad_alloc&) {
             return std::make_error_condition(std::errc::not_enough_memory);
         }
 
-        MaxPalindromes(std::forward<decltype(view)>(view), &ret);
+        MaxPalindromes(std::forward<decltype(view)>(view), ret.begin());
         return std::move(ret);
     }
 
