@@ -12,16 +12,16 @@ namespace algo {
             && !std::is_same_v<std::remove_cv_t<T>, void>
             && !std::is_same_v<std::remove_cv_t<T>, std::remove_cv_t<E>>
         )
-    class Result : public std::variant<T, E> {
+    class Expected : public std::variant<T, E> {
         using Base = std::variant<T, E>;
 
     public:
-        Result(E ec)
+        Expected(E ec)
             : Base{std::move(ec)}
         {}
 
         template<typename... Args>
-        Result(Args&&... args)
+        Expected(Args&&... args)
             : Base{std::in_place_type<T>, std::forward<Args>(args)...}
         {}
 

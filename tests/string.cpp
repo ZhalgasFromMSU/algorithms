@@ -1,14 +1,20 @@
+#include "utils.hpp"
+
 #include <algo/string.hpp>
 
 #include <gtest/gtest.h>
 
 using namespace algo;
 
-TEST(String, Palindrome) {
-    //ASSERT_EQ(*String::MaxPalindromes("babad"), std::vector<size_t>({1, 3, 3, 1, 1, 1}));
-    //ASSERT_EQ(*String::MaxPalindromes("cbbd"), std::vector<size_t>({1, 2, 1, 1, 1}));
+struct TestString : algo::testing::Randomizer {
 
-    //ASSERT_EQ(*String::MaxPalindromes("bb"), std::vector<size_t>({2, 1, 1}));
+};
+
+TEST_F(TestString, Palindrome) {
+    ASSERT_EQ(*String::MaxPalindromes("babad"), std::vector<size_t>({1, 3, 3, 1, 1, 1}));
+    ASSERT_EQ(*String::MaxPalindromes("cbbd"), std::vector<size_t>({1, 2, 1, 1, 1}));
+
+    ASSERT_EQ(*String::MaxPalindromes("bb"), std::vector<size_t>({2, 1, 1}));
 
 
     auto naive = [](std::string_view s) -> std::vector<size_t> {
@@ -31,12 +37,37 @@ TEST(String, Palindrome) {
         return ret;
     };
 
-    //const char s[] = "01232100123210";
-    //ASSERT_EQ(*String::MaxPalindromes(std::string_view{s}), naive(s));
+    for (std::string_view s : {"01232100123210", "aaaaaa", "aaaaaaa"}) {
+        ASSERT_EQ(*String::MaxPalindromes(s), naive(s)) << s;
+    }
 
-    const char s2[] = "aaaaaa";
-    ASSERT_EQ(*String::MaxPalindromes(std::string_view{s2}), naive(s2)) << s2;
+    SetSeed(1);
+    for (size_t i = 0; i < 100; ++i) {
+        std::string s = RandomString(RandomInt(10, 1000), "ab");
+        ASSERT_EQ(*String::MaxPalindromes(s), naive(s)) << s;
+    }
+}
 
-    const char s3[] = "aaaaaaa";
-    ASSERT_EQ(*String::MaxPalindromes(std::string_view{s3}), naive(s3)) << s3;
+TEST_F(TestString, ZFunc) {
+    auto naive = [](std::string_view s) -> std::vector<size_t> {
+        std::vector<size_t> ret(s.size());
+        for (size_t i = 0; i < ret.size(); ++i) {
+            size_t size = 0;
+            while (i + size < ret.size() && s[i + size] == s[size]) {
+                size += 1;
+            }
+            ret[i] = size;
+        }
+        return ret;
+    };
+
+    for (std::string_view s : {"aaa", "aaabbb"}) {
+        ASSERT_EQ(*String::ZFunc(s), naive(s)) << s;
+    }
+
+    SetSeed(2);
+    for (size_t i = 0; i < 100; ++i) {
+        std::string s = RandomString(RandomInt(10, 1000), "ab");
+        ASSERT_EQ(*String::ZFunc(s), naive(s)) << s;
+    }
 }

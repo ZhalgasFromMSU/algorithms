@@ -1,6 +1,6 @@
 #pragma once
 
-#include <helpers/result.hpp>
+#include <helpers/expected.hpp>
 #include <helpers/assert.hpp>
 
 #include <type_traits>
@@ -20,16 +20,20 @@ namespace algo {
          *
          * returns error if couldn't allocate resulting vector
          */
-        static Result<std::vector<size_t>> MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept;
+        static Expected<std::vector<size_t>> MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept;
+
+        /*
+         * Return vector, depicting Z-function of a range:
+         * ret[idx] == size of a biggest prefix of a view, that is also a prefix of sub_view starting at idx
+         */
+        static Expected<std::vector<size_t>> ZFunc(std::ranges::random_access_range auto&& view) noexcept;
     };
 
     // Implementation
-    Result<std::vector<size_t>> String::MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept {
-        std::vector<size_t> sizes;
-
+    Expected<std::vector<size_t>> String::MaxPalindromes(std::ranges::random_access_range auto&& view) noexcept {
         const size_t n = std::ranges::size(view);
-        auto data = std::ranges::begin(view);
 
+        std::vector<size_t> sizes;
         try {
             sizes.resize(n * 2);
         } catch (const std::bad_alloc&) {
@@ -41,7 +45,7 @@ namespace algo {
             auto inc = [&](size_t i, size_t* k) {
                 do {
                     *k += 1;
-                } while (i + *k < n && i >= *k && data[i + *k] == data[i - *k]);
+                } while (i + *k < n && i >= *k && view[i + *k] == view[i - *k]);
                 *k -= 1;
             };
 
@@ -72,7 +76,7 @@ namespace algo {
             auto inc = [&](size_t i, size_t* k) {
                 do {
                     *k += 1;
-                } while (i + *k < 2 * n && i + 1 - n >= *k && data[i + *k - n] == data[i + 1 - *k - n]);
+                } while (i + *k < 2 * n && i + 1 - n >= *k && view[i + *k - n] == view[i + 1 - *k - n]);
                 *k -= 1;
             };
 
@@ -111,5 +115,34 @@ namespace algo {
         return std::move(sizes);
     }
 
+    Expected<std::vector<size_t>> String::ZFunc(std::ranges::random_access_range auto&& view) noexcept {
+        // https://e-maxx.ru/algo/z_function
+        const size_t n = std::ranges::size(view);
+
+        std::vector<size_t> ret;
+        try {
+            ret.resize(n);
+        } catch (const std::bad_alloc&) {
+            return std::make_error_condition(std::errc::not_enough_memory);
+        }
+
+        ret[0] = n;
+        size_t l {0}, r {0};
+        for (size_t i = 1; i < n; ++i) {
+            if (i < r) {
+                ret[i] = std::min(ret[i - l], r - i);
+            }
+
+            while (i + ret[i] < n && view[i + ret[i]] == view[ret[i]]) {
+                ++ret[i];
+            }
+
+            if (i + ret[i] > r) {
+                l = i;
+                r = i + ret[i];
+            }
+        }
+        return std::move(ret);
+    }
 
 } // namespace algo
