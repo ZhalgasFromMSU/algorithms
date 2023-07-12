@@ -6,17 +6,19 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_library(${PROJECT_NAME})
+add_library(${PROJECT_NAME} INTERFACE)
 
 target_include_directories(${PROJECT_NAME}
-PUBLIC
+INTERFACE
     include
-)
-
-target_sources(${PROJECT_NAME}
-PUBLIC
-    src/dummy.cpp
 )
 
 add_compile_options(-Werror -Wall -pedantic -g -O2)
 
+option(BUILD_TESTS "Build tests" OFF)
+
+if (BUILD_TESTS)
+    message("Building tests")
+    add_subdirectory(tests)
+    target_link_libraries(tests ${PROJECT_NAME})
+endif()

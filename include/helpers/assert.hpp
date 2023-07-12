@@ -1,9 +1,8 @@
 #pragma once
 
 #include <iostream>
+#include <source_location>
 
-#define STRINGIZE_DETAIL(x) #x
-#define STRINGIZE(x) STRINGIZE_DETAIL(x)
-#define ERROR_INFO(expr_str) __FILE__ ":" STRINGIZE(__LINE__) ": " expr_str
-
-#define ASSERT(expr, ...) if (!(expr)) { std::cerr << "Assert failed: " __VA_ARGS__ << '\n' << ERROR_INFO(#expr) << std::endl; std::terminate(); }
+#define ASSERT(expr, ...) if (!(expr)) { std::cerr << "Assert failed: " __VA_ARGS__ << '\n' \
+                                                   << std::source_location::current().file_name() << ':' << std::source_location::current().line() << ": " \
+                                                   << #expr << std::endl; std::terminate(); }
