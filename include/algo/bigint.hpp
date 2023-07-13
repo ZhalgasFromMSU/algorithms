@@ -17,8 +17,13 @@ namespace algo {
     class BigInt {
     public:
         using Word = uint32_t;
-        static constexpr size_t kWordBSize = sizeof(Word) * std::numeric_limits<char8_t>::digits;
         static_assert(words_capacity > 0 && !std::numeric_limits<Word>::is_signed && std::numeric_limits<Word>::is_modulo);
+
+        using Storage = std::conditional_t<
+                            words_capacity == -1ull,
+                            std::vector<Word>,
+                            std::array<Word, words_capacity>
+                        >;
 
         constexpr BigInt() noexcept = default;
         constexpr BigInt(int64_t integer) noexcept;
@@ -27,7 +32,7 @@ namespace algo {
         constexpr BigInt(const Range<Word> auto& range, bool is_positive = true) noexcept;
 
         constexpr bool operator==(const BigInt&) const noexcept;
-        constexpr auto operator<=>(const BigInt&) const noexcept;
+        constexpr std::strong_ordering operator<=>(const BigInt&) const noexcept;
 
         constexpr BigInt& operator<<=(size_t) noexcept;
         constexpr BigInt& operator>>=(size_t) noexcept;
@@ -49,15 +54,11 @@ namespace algo {
         constexpr BigInt Power(BigInt exp) const noexcept;
 
         constexpr bool IsZero() const noexcept;
-        constexpr bool IsOne() const noexcept;
         constexpr bool IsPowerOf2() const noexcept;
         constexpr size_t BitWidth() const noexcept;
 
-        constexpr const Word* cbegin() const noexcept;
-        constexpr const Word* cend() const noexcept;
-
-        std::array<Word, words_capacity> binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
-                                                      // can't use bitset here, because not constexpr (since C++23)
+        Storage binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
+                             // can't use bitset here, because not constexpr (since C++23)
         size_t words_count = 0;
         bool is_positive = true;
 
@@ -67,23 +68,27 @@ namespace algo {
 
         static constexpr size_t RangeWordsCount(const Range<Word> auto& range) noexcept; 
 
+        constexpr auto ToView() const noexcept;
         // All operations below can work properly if range points to subrange of this->binary
         constexpr void UnsignedResetBinary(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedAddRange(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept;
-        constexpr void UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept; // either this or rhs is lesser than 32 bits
+        constexpr void UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept; // either this or rhs is lesser than Word
         template<size_t subint_words_capacity>
         constexpr void KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedMultiplyByRange(const Range<Word> auto& range) noexcept;
-        constexpr BigInt ShortUnsignedDivideBy(uint32_t) noexcept; // returns remainder
+        constexpr BigInt ShortUnsignedDivideBy(Word) noexcept; // returns remainder
         constexpr BigInt UnsignedDivideByRange(const Range<Word> auto& range) noexcept; // returns remainder
 
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
 
+        static constexpr size_t kWordBSize = std::numeric_limits<Word>::digits;
         static constexpr Word kMaxWord = std::numeric_limits<Word>::max();
     };
 
     // Traits
+    using VecBigInt = BigInt<-1ull>;
+
     template<typename T>
     struct IsBigInt : std::false_type {};
 
@@ -313,7 +318,7 @@ namespace algo {
             is_positive ^= true;
             return *this;
         } else {
-            UnsignedAddRange(std::ranges::subrange(rhs.cbegin(), rhs.cend()));
+            UnsignedAddRange(rhs.ToView());
             return *this;
         }
     }
@@ -367,7 +372,7 @@ namespace algo {
     template<size_t words_capacity>
     constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator-=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
-            UnsignedAddRange(std::ranges::subrange(rhs.cbegin(), rhs.cend()));
+            UnsignedAddRange(rhs.ToView());
             return *this;
         }
 
@@ -377,7 +382,7 @@ namespace algo {
             return *this = -(rhs - *this);
         }
 
-        UnsignedSubSmallerRange(std::ranges::subrange(rhs.cbegin(), rhs.cend()));
+        UnsignedSubSmallerRange(rhs.ToView());
         return *this;
     }
 
@@ -436,39 +441,33 @@ namespace algo {
         }
     }
 
-    //template<size_t _>
-    //template<size_t subint_words_capacity, IntIter It>
-    //constexpr void BigInt<_>::KaratsubaMultiplyByRange(It begin, It end) noexcept {
-        //using SmallInt = BigInt<subint_words_capacity>;
+    template<size_t _>
+    template<size_t subint_words_capacity>
+    constexpr void BigInt<_>::KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept {
+        // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
+        using SmallInt = BigInt<subint_words_capacity>; // Multiplication result can fit into SmallInt
 
-        //size_t range_words_count = RangeWordsCount(begin, end);
-        //size_t end_thr = std::max(words_count, range_words_count);
-        //size_t mid_thr = (end_thr + 1) / 2;
-        //SmallInt this_l {cbegin(), cbegin() + mid_thr};
-        //SmallInt this_h {cbegin() + mid_thr, cbegin() + end_thr};
+        const size_t mid_thr = (std::max(RangeWordsCount(range), words_count) + 1) / 2;
 
-        //SmallInt rhs_l;
-        //SmallInt rhs_h;
+        SmallInt this_l {std::ranges::take_view(ToView(), mid_thr)};
+        SmallInt this_h {std::ranges::drop_view(ToView(), mid_thr)};
 
-        //if (mid_thr >= range_words_count) {
-            //rhs_l.UnsignedResetBinary(begin, begin + range_words_count);
-        //} else {
-            //rhs_l.UnsignedResetBinary(begin, begin + mid_thr);
-            //rhs_h.UnsignedResetBinary(begin + mid_thr, begin + range_words_count);
-        //}
+        SmallInt rhs_l {std::ranges::take_view(range, mid_thr)};
+        SmallInt rhs_h {std::ranges::drop_view(range, mid_thr)};
 
-        //SmallInt mix = (this_l + this_h) * (rhs_l + rhs_h);
-        //this_h *= rhs_h;
-        //this_l *= rhs_l;
-        //size_t shift = mid_thr * 32;
-        //UnsignedResetBinary(this_h.cbegin(), this_h.cend());
-        //*this <<= shift;
-        //UnsignedAddRange(mix.cbegin(), mix.cend());
-        //UnsignedSubSmallerRange(this_h.cbegin(), this_h.cend());
-        //UnsignedSubSmallerRange(this_l.cbegin(), this_l.cend());
-        //*this <<= shift;
-        //UnsignedAddRange(this_l.cbegin(), this_l.cend());
-    //}
+        // 2^32 * (2^32 * (this_h * rhs_h) + (this_h + this_l) * (rhs_h * rhs_l) - this_h * rhs_h - this_l * rhs_l) + this_l * rhs_l
+        SmallInt mix = (this_l + this_h) * (rhs_l + rhs_h);
+        this_h *= rhs_h;
+        this_l *= rhs_l;
+
+        UnsignedResetBinary(this_h.ToView());
+        *this <<= mid_thr * kWordBSize;
+        UnsignedAddRange(mix.ToView());
+        UnsignedSubSmallerRange(this_h.ToView());
+        UnsignedSubSmallerRange(this_l.ToView());
+        *this <<= mid_thr * kWordBSize;
+        UnsignedAddRange(this_l.ToView());
+    }
 
     template<size_t words_capacity>
     constexpr void BigInt<words_capacity>::UnsignedMultiplyByRange(const Range<Word> auto& range) noexcept {
@@ -482,27 +481,37 @@ namespace algo {
             BigInt ret;
             auto it = std::ranges::begin(range);
             for (size_t i = 0; i < range_words_count; ++i, ++it) {
-                BigInt tmp {*this};
-                tmp.UnsignedShortMultiplyByRange(std::ranges::single_view(*it));
-                tmp <<= i * kWordBSize;
-                ret.UnsignedAddRange(std::ranges::subrange(tmp.cbegin(), tmp.cend()));
+                // Try to perform multiplication on smaller type because we don't need to allocate whole array
+#define TRY_OPTIMIZE(cap) if (words_count + i + 1 < cap) { \
+                              BigInt<cap> tmp {ToView()}; \
+                              tmp.UnsignedShortMultiplyByRange(std::ranges::single_view(*it)); \
+                              tmp <<= i * kWordBSize; \
+                              ret.UnsignedAddRange(tmp.ToView()); \
+                          }
+
+                TRY_OPTIMIZE(words_capacity / 16 + 1)
+                else TRY_OPTIMIZE(words_capacity / 8 + 1)
+                else TRY_OPTIMIZE(words_capacity / 4 + 1)
+                else TRY_OPTIMIZE(words_capacity / 2 + 1)
+                else {
+                    BigInt tmp {*this};
+                    tmp.UnsignedShortMultiplyByRange(std::ranges::single_view(*it));
+                    tmp <<= i * kWordBSize;
+                    ret.UnsignedAddRange(tmp.ToView());
+                }
+#undef TRY_OPTIMIZE
             }
-            UnsignedResetBinary(std::ranges::subrange(ret.cbegin(), ret.cend()));
-        //} else {
-            //// https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
-            //if (size_t max_size = words_count + range_words_count; max_size <= words_capacity / 16) {
-                //KaratsubaMultiplyByRange<words_capacity / 16 + 1>(begin, begin + range_words_count);
-            //} else if (max_size <= words_capacity / 8) {
-                //KaratsubaMultiplyByRange<words_capacity / 8 + 1>(begin, begin + range_words_count);
-            //} else if (max_size <= words_capacity / 4) {
-                //KaratsubaMultiplyByRange<words_capacity / 4 + 1>(begin, begin + range_words_count);
-            //} else if (max_size <= words_capacity / 2) {
-                //KaratsubaMultiplyByRange<words_capacity / 2 + 1>(begin, begin + range_words_count);
-            //} else {
-                //KaratsubaMultiplyByRange<words_capacity>(begin, begin + range_words_count);
-            //}
+            UnsignedResetBinary(ret.ToView());
         } else {
-            ASSERT(false, "Unreachable");
+            size_t max_size = words_count + range_words_count;
+            // If result fits into smaller array, then perform multiplication using smaller array
+#define TRY_OPTIMIZE(cap) if (max_size < cap) { KaratsubaMultiplyByRange<cap>(range); return; }
+            TRY_OPTIMIZE(words_capacity / 16 + 1)
+            TRY_OPTIMIZE(words_capacity / 8 + 1)
+            TRY_OPTIMIZE(words_capacity / 4 + 1)
+            TRY_OPTIMIZE(words_capacity / 2 + 1)
+#undef TRY_OPTIMIZE
+            KaratsubaMultiplyByRange<words_capacity>(range);
         }
     }
 
@@ -513,7 +522,7 @@ namespace algo {
         }
 
         is_positive ^= !rhs.is_positive;
-        UnsignedMultiplyByRange(std::ranges::subrange(rhs.cbegin(), rhs.cend()));
+        UnsignedMultiplyByRange(rhs.ToView());
         return *this;
     }
 
@@ -739,11 +748,6 @@ namespace algo {
     }
 
     template<size_t _>
-    constexpr bool BigInt<_>::IsOne() const noexcept {
-        return is_positive && words_count == 1 && binary[0] == 1;
-    }
-
-    template<size_t _>
     constexpr bool BigInt<_>::IsPowerOf2() const noexcept {
         if (IsZero()) {
             return false;
@@ -768,13 +772,8 @@ namespace algo {
     }
 
     template<size_t _>
-    constexpr const BigInt<_>::Word* BigInt<_>::cbegin() const noexcept {
-        return binary.cbegin();
-    }
-
-    template<size_t _>
-    constexpr const BigInt<_>::Word* BigInt<_>::cend() const noexcept {
-        return binary.cbegin() + words_count;
+    constexpr auto BigInt<_>::ToView() const noexcept {
+        return std::views::counted(binary.cbegin(), words_count);
     }
 
     template<size_t words_capacity>
@@ -809,7 +808,7 @@ namespace algo {
     }
 
     template<size_t _>
-    constexpr auto BigInt<_>::operator<=>(const BigInt& rhs) const noexcept {
+    constexpr std::strong_ordering BigInt<_>::operator<=>(const BigInt& rhs) const noexcept {
         if (IsZero() && rhs.IsZero()) {
             return std::strong_ordering::equal;
         } else if (IsZero()) {
