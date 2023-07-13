@@ -112,7 +112,7 @@ TEST_F(TestBigInt, Add) {
 TEST_F(TestBigInt, Mul) {
     {
         BI32 bi = (1ull << 33) - 1;
-        ASSERT_EQ(bi * 3, ((1ull << 33) - 1) * 3);
+        ASSERT_EQ(bi * 3ull, ((1ull << 33) - 1) * 3ull);
     }
 
     SetSeed(2);

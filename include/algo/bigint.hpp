@@ -13,20 +13,25 @@
 
 namespace algo {
 
-    template<size_t words_capacity>
+    template<size_t words_capacity, typename Word = uint32_t, typename DoubleWord = uint64_t>
     class BigInt {
-    public:
-        using Word = uint32_t;
         static_assert(words_capacity > 0 && !std::numeric_limits<Word>::is_signed && std::numeric_limits<Word>::is_modulo);
+        static_assert(sizeof(DoubleWord) >= sizeof(Word) * 2, "DoubleWord should be able to hold result of any Word multiplication");
 
+        static constexpr size_t kWordBSize = std::numeric_limits<Word>::digits;
+        static_assert(std::numeric_limits<size_t>::max() / kWordBSize >= words_capacity, "Every single bit should be indexable by size_t");
+
+        static constexpr Word kMaxWord = std::numeric_limits<Word>::max();
+
+    public:
         using Storage = std::conditional_t<
-                            words_capacity == -1ull,
+                            words_capacity == -1ull && false, // TODO add support for vector
                             std::vector<Word>,
                             std::array<Word, words_capacity>
                         >;
 
         constexpr BigInt() noexcept = default;
-        constexpr BigInt(int64_t integer) noexcept;
+        constexpr BigInt(DoubleWord integer, bool is_positive = true) noexcept;
         constexpr BigInt(std::string_view str) noexcept;
 
         constexpr BigInt(const Range<Word> auto& range, bool is_positive = true) noexcept;
@@ -63,7 +68,7 @@ namespace algo {
         bool is_positive = true;
 
     private:
-        template<size_t s>
+        template<size_t s, typename w, typename dw>
         friend class BigInt;
 
         static constexpr size_t RangeWordsCount(const Range<Word> auto& range) noexcept; 
@@ -81,9 +86,6 @@ namespace algo {
         constexpr BigInt UnsignedDivideByRange(const Range<Word> auto& range) noexcept; // returns remainder
 
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
-
-        static constexpr size_t kWordBSize = std::numeric_limits<Word>::digits;
-        static constexpr Word kMaxWord = std::numeric_limits<Word>::max();
     };
 
     // Traits
@@ -92,28 +94,16 @@ namespace algo {
     template<typename T>
     struct IsBigInt : std::false_type {};
 
-    template<size_t S>
-    struct IsBigInt<BigInt<S>> : std::true_type {};
+    template<size_t S, typename Word, typename DoubleWord>
+    struct IsBigInt<BigInt<S, Word, DoubleWord>> : std::true_type {};
 
     // Implementation
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>::BigInt(int64_t sfrom) noexcept {
-        ASSERT(words_capacity > 1 || sfrom <= kMaxWord, "Given integer won't fit in provided type");
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>::BigInt(DoubleWord from, bool is_positive) noexcept {
+        ASSERT(words_capacity > 1 || from <= kMaxWord, "Given integer won't fit in provided type");
 
-        if (sfrom == 0) {
+        if (from == 0) {
             return;
-        }
-
-        uint64_t from;
-        if (sfrom < 0) {
-            is_positive = false;
-            if (sfrom == std::numeric_limits<int64_t>::min()) {
-                from = 1ull << 63;
-            } else {
-                from = static_cast<uint64_t>(-sfrom);
-            }
-        } else {
-            from = sfrom;
         }
 
         binary[0] = from & kMaxWord;
@@ -125,8 +115,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>::BigInt(std::string_view str) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>::BigInt(std::string_view str) noexcept {
         ASSERT(str.size() != 0);
 
         if (str[0] == '-') {
@@ -167,8 +157,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>::BigInt(const Range<Word> auto& range, bool is_positive) noexcept
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>::BigInt(const Range<Word> auto& range, bool is_positive) noexcept
         : is_positive{is_positive}
     {
         size_t counter = 1;
@@ -183,8 +173,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator<<=(size_t shift) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator<<=(size_t shift) noexcept {
         ASSERT(shift < words_capacity * kWordBSize, "Shift is bigger than bit size");
 
         if (shift == 0) {
@@ -193,8 +183,8 @@ namespace algo {
 
         size_t word_offset = shift / kWordBSize;
         size_t bit_offset = shift % kWordBSize;
-        auto get_shifted_word = [&](size_t idx) -> uint32_t {
-            uint32_t ret = 0;
+        auto get_shifted_word = [&](size_t idx) -> Word {
+            Word ret = 0;
             if (idx >= word_offset) {
                 ret |= binary[idx - word_offset] << bit_offset;
                 if (bit_offset != 0 && idx > word_offset) [[likely]] {
@@ -214,16 +204,16 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator>>=(size_t shift) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator>>=(size_t shift) noexcept {
         ASSERT(shift < words_capacity * kWordBSize, "Shift is bigger than bit size");
         if (shift == 0) {
             return *this;
         }
         size_t word_offset = shift / kWordBSize;
         size_t bit_offset = shift % kWordBSize;
-        auto get_shifted_word = [&](size_t idx) -> uint32_t {
-            uint32_t ret = 0;
+        auto get_shifted_word = [&](size_t idx) -> Word {
+            Word ret = 0;
             if (size_t shifted_idx = idx + word_offset; shifted_idx < words_capacity) {
                 ret |= binary[shifted_idx] >> bit_offset;
                 if (bit_offset != 0 && shifted_idx + 1 < words_capacity) [[likely]] {
@@ -243,25 +233,25 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> BigInt<words_capacity>::operator<<(size_t shift_int) const noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::operator<<(size_t shift_int) const noexcept {
         return BigInt{*this} <<= shift_int;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> BigInt<words_capacity>::operator>>(size_t shift_int) const noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::operator>>(size_t shift_int) const noexcept {
         return BigInt{*this} >>= shift_int;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> BigInt<words_capacity>::operator-() const noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::operator-() const noexcept {
         BigInt copy = *this;
         copy.is_positive ^= true;
         return copy;
     }
 
-    template<size_t words_capacity>
-    constexpr void BigInt<words_capacity>::UnsignedResetBinary(const Range<Word> auto& range) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedResetBinary(const Range<Word> auto& range) noexcept {
         words_count = 0;
         size_t counter = 0;
         binary = {};
@@ -275,8 +265,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr void BigInt<words_capacity>::UnsignedAddRange(const Range<Word> auto& range) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedAddRange(const Range<Word> auto& range) noexcept {
         Word carry = 0;
 
         size_t range_words_count = RangeWordsCount(range);
@@ -310,8 +300,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator+=(const BigInt& rhs) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator+=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
             is_positive ^= true;
             *this -= rhs;
@@ -323,8 +313,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr void BigInt<words_capacity>::UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept {
         Word borrow = 0;
 
         size_t mb_words_count = 0;
@@ -369,8 +359,8 @@ namespace algo {
         }
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator-=(const BigInt& rhs) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator-=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
             UnsignedAddRange(rhs.ToView());
             return *this;
@@ -386,11 +376,8 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity>
-    constexpr void BigInt<words_capacity>::UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept {
-        using DoubleWord = uint64_t;
-        static_assert(sizeof(DoubleWord) >= 2 * sizeof(Word), "Double word should be at least two times bigger than word");
-
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept {
         const size_t old_words_count = words_count;
         const size_t range_words_count = RangeWordsCount(range);
         ASSERT(old_words_count <= 1 || range_words_count <= 1, "Short multiplication not applicable");
@@ -441,9 +428,9 @@ namespace algo {
         }
     }
 
-    template<size_t _>
+    template<size_t words_capacity, typename Word, typename DoubleWord>
     template<size_t subint_words_capacity>
-    constexpr void BigInt<_>::KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept {
         // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
         using SmallInt = BigInt<subint_words_capacity>; // Multiplication result can fit into SmallInt
 
@@ -469,8 +456,8 @@ namespace algo {
         UnsignedAddRange(this_l.ToView());
     }
 
-    template<size_t words_capacity>
-    constexpr void BigInt<words_capacity>::UnsignedMultiplyByRange(const Range<Word> auto& range) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedMultiplyByRange(const Range<Word> auto& range) noexcept {
         size_t range_words_count = RangeWordsCount(range);
 
         if (words_count == 1 || range_words_count == 1) {
@@ -511,12 +498,12 @@ namespace algo {
             TRY_OPTIMIZE(words_capacity / 4 + 1)
             TRY_OPTIMIZE(words_capacity / 2 + 1)
 #undef TRY_OPTIMIZE
-            KaratsubaMultiplyByRange<words_capacity>(range);
+            KaratsubaMultiplyByRange<words_capacity, Word, DoubleWord>(range);
         }
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator*=(const BigInt& rhs) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator*=(const BigInt& rhs) noexcept {
         if (rhs.IsPowerOf2()) {
             return *this <<= rhs.BitWidth() - 1;
         }
@@ -526,36 +513,36 @@ namespace algo {
         return *this;
     }
 
-    //template<size_t words_capacity>
-    //constexpr BigInt<words_capacity> BigInt<words_capacity>::ShortUnsignedDivideBy(uint32_t rhs) noexcept {
-        //BigInt remainder;
-        //bool set = false;
-        //const size_t iterations = words_count;
-        //words_count = 0;
-        //uint64_t window = 0;
-        //for (size_t i = 0; i < iterations; ++i) {
-            //window = (window << 32) + binary[iterations - 1 - i];
-            //if (window >= rhs) {
-                //binary[iterations - 1 - i] = window / rhs;
-                //if (!set && binary[iterations - 1 - i]) {
-                    //set = true;
-                    //words_count = iterations - i;
-                //}
-                //window %= rhs;
-            //} else {
-                //binary[iterations - 1 - i] = 0;
-            //}
-        //}
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::ShortUnsignedDivideBy(Word rhs) noexcept {
+        BigInt remainder;
+        bool set = false;
+        const size_t iterations = words_count;
+        words_count = 0;
+        DoubleWord window = 0;
+        for (size_t i = 0; i < iterations; ++i) {
+            window = (window << kWordBSize) + binary[iterations - 1 - i];
+            if (window >= rhs) {
+                binary[iterations - 1 - i] = window / rhs;
+                if (!set && binary[iterations - 1 - i]) {
+                    set = true;
+                    words_count = iterations - i;
+                }
+                window %= rhs;
+            } else {
+                binary[iterations - 1 - i] = 0;
+            }
+        }
 
-        //if ((remainder.binary[0] = static_cast<uint32_t>(window))) {
-            //remainder.words_count = 1;
-        //}
-        //return remainder;
-    //}
+        if ((remainder.binary[0] = static_cast<Word>(window))) {
+            remainder.words_count = 1;
+        }
+        return remainder;
+    }
 
-    //template<size_t words_capacity>
+    //template<size_t words_capacity, typename Word, typename DoubleWord>
     //template<IntIter It>
-    //constexpr BigInt<words_capacity> BigInt<words_capacity>::UnsignedDivideByRange(It begin, It end) noexcept {
+    //constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::UnsignedDivideByRange(It begin, It end) noexcept {
         //size_t range_words_count = RangeWordsCount(begin, end);
         //ASSERT(range_words_count <= words_count);
 
@@ -639,8 +626,8 @@ namespace algo {
         //}
     //}
 
-    //template<size_t words_capacity>
-    //constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator/=(const BigInt& rhs) noexcept {
+    //template<size_t words_capacity, typename Word, typename DoubleWord>
+    //constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator/=(const BigInt& rhs) noexcept {
         //ASSERT(!rhs.IsZero());
         //if (IsZero() || rhs.IsOne()) {
             //return *this;
@@ -657,8 +644,8 @@ namespace algo {
         //return *this;
     //}
 
-    //template<size_t words_capacity>
-    //constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator%=(const BigInt& rhs) noexcept {
+    //template<size_t words_capacity, typename Word, typename DoubleWord>
+    //constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator%=(const BigInt& rhs) noexcept {
         //ASSERT(!rhs.IsZero());
         //ASSERT(!rhs.IsOne() && rhs.is_positive);
         //if (IsZero() || words_count < rhs.words_count) {
@@ -672,8 +659,8 @@ namespace algo {
         //return *this;
     //}
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity> BigInt<words_capacity>::operator~() const noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::operator~() const noexcept {
         BigInt ret;
         ret.is_positive = is_positive;
         for (size_t i = 0; i < words_capacity; ++i) {
@@ -685,8 +672,8 @@ namespace algo {
         return ret;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator^=(const BigInt& other) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator^=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
         words_count = 0;
         for (size_t i = 0; i < iterations; ++i) {
@@ -697,8 +684,8 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator|=(const BigInt& other) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator|=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
         words_count = iterations;
         for (size_t i = 0; i < iterations; ++i) {
@@ -707,8 +694,8 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity>
-    constexpr BigInt<words_capacity>& BigInt<words_capacity>::operator&=(const BigInt& other) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator&=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
         words_count = 0;
         for (size_t i = 0; i < iterations; ++i) {
@@ -719,15 +706,15 @@ namespace algo {
         return *this;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> BigInt<_>::Power(BigInt exp) const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> BigInt<c, W, DW>::Power(BigInt exp) const noexcept {
         BigInt ret;
         PowerInner(ret, std::move(exp));
         return ret;
     }
 
-    template<size_t _>
-    constexpr void BigInt<_>::PowerInner(BigInt& res, BigInt&& exp) const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr void BigInt<c, W, DW>::PowerInner(BigInt& res, BigInt&& exp) const noexcept {
         if (exp.IsZero()) {
             res = 1;
         } else if (exp.IsOne()) {
@@ -742,13 +729,13 @@ namespace algo {
         }
     }
 
-    template<size_t _>
-    constexpr bool BigInt<_>::IsZero() const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr bool BigInt<c, W, DW>::IsZero() const noexcept {
         return words_count == 0;
     }
 
-    template<size_t _>
-    constexpr bool BigInt<_>::IsPowerOf2() const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr bool BigInt<c, W, DW>::IsPowerOf2() const noexcept {
         if (IsZero()) {
             return false;
         }
@@ -762,8 +749,8 @@ namespace algo {
         return (binary[words_count - 1] & (binary[words_count - 1] - 1)) == 0;
     }
 
-    template<size_t words_capacity>
-    constexpr size_t BigInt<words_capacity>::BitWidth() const noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr size_t BigInt<words_capacity, Word, DoubleWord>::BitWidth() const noexcept {
         if (IsZero()) {
             return 0;
         }
@@ -771,13 +758,13 @@ namespace algo {
         return (words_count - 1) * 32 + std::bit_width(binary[words_count - 1]);
     }
 
-    template<size_t _>
-    constexpr auto BigInt<_>::ToView() const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr auto BigInt<c, W, DW>::ToView() const noexcept {
         return std::views::counted(binary.cbegin(), words_count);
     }
 
-    template<size_t words_capacity>
-    constexpr size_t BigInt<words_capacity>::RangeWordsCount(const Range<Word> auto& range) noexcept {
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr size_t BigInt<words_capacity, Word, DoubleWord>::RangeWordsCount(const Range<Word> auto& range) noexcept {
         if constexpr (std::ranges::random_access_range<decltype(range)>) {
             size_t size = std::ranges::size(range);
             auto data = std::ranges::begin(range);
@@ -802,13 +789,13 @@ namespace algo {
         }
     }
 
-    template<size_t _>
-    constexpr bool BigInt<_>::operator==(const BigInt& rhs) const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr bool BigInt<c, W, DW>::operator==(const BigInt& rhs) const noexcept {
         return (*this <=> rhs) == 0;
     }
 
-    template<size_t _>
-    constexpr std::strong_ordering BigInt<_>::operator<=>(const BigInt& rhs) const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr std::strong_ordering BigInt<c, W, DW>::operator<=>(const BigInt& rhs) const noexcept {
         if (IsZero() && rhs.IsZero()) {
             return std::strong_ordering::equal;
         } else if (IsZero()) {
@@ -844,150 +831,150 @@ namespace algo {
     }
 
     // Arithmetic opeartors
-    template<size_t _>
-    constexpr BigInt<_> operator+(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator+(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs += rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator+(const BigInt<_>& lhs, T&& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(rhs)} + lhs;
+    constexpr BigInt<c, W, DW> operator+(const BigInt<c, W, DW>& lhs, T&& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(rhs)} + lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator+(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} + rhs;
+    constexpr BigInt<c, W, DW> operator+(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} + rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator-(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator-(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs -= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator-(const BigInt<_>& lhs, T&& rhs) noexcept {
-        return -(BigInt<_>{std::forward<T>(rhs)} - lhs);
+    constexpr BigInt<c, W, DW> operator-(const BigInt<c, W, DW>& lhs, T&& rhs) noexcept {
+        return -(BigInt<c, W, DW>{std::forward<T>(rhs)} - lhs);
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator-(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} - rhs;
+    constexpr BigInt<c, W, DW> operator-(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} - rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator*(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator*(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs *= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator*(const BigInt<_>& lhs, T&& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(rhs)} * lhs;
+    constexpr BigInt<c, W, DW> operator*(const BigInt<c, W, DW>& lhs, T&& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(rhs)} * lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator*(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} * rhs;
+    constexpr BigInt<c, W, DW> operator*(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} * rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator/(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator/(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs /= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator/(BigInt<_> lhs, T&& rhs) noexcept {
-        lhs /= BigInt<_>{std::forward<T>(rhs)};
+    constexpr BigInt<c, W, DW> operator/(BigInt<c, W, DW> lhs, T&& rhs) noexcept {
+        lhs /= BigInt<c, W, DW>{std::forward<T>(rhs)};
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator/(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} / rhs;
+    constexpr BigInt<c, W, DW> operator/(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} / rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator%(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator%(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs %= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator%(BigInt<_> lhs, T&& rhs) noexcept {
-        lhs %= BigInt<_>{std::forward<T>(rhs)};
+    constexpr BigInt<c, W, DW> operator%(BigInt<c, W, DW> lhs, T&& rhs) noexcept {
+        lhs %= BigInt<c, W, DW>{std::forward<T>(rhs)};
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator%(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} % rhs;
+    constexpr BigInt<c, W, DW> operator%(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} % rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator&(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator&(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs &= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator&(const BigInt<_>& lhs, T&& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(rhs)} & lhs;
+    constexpr BigInt<c, W, DW> operator&(const BigInt<c, W, DW>& lhs, T&& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(rhs)} & lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator&(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} & rhs;
+    constexpr BigInt<c, W, DW> operator&(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} & rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator|(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator|(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs |= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator|(const BigInt<_>& lhs, T&& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(rhs)} | lhs;
+    constexpr BigInt<c, W, DW> operator|(const BigInt<c, W, DW>& lhs, T&& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(rhs)} | lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator|(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} | rhs;
+    constexpr BigInt<c, W, DW> operator|(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} | rhs;
     }
 
-    template<size_t _>
-    constexpr BigInt<_> operator^(BigInt<_> lhs, const BigInt<_>& rhs) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW> operator^(BigInt<c, W, DW> lhs, const BigInt<c, W, DW>& rhs) noexcept {
         lhs ^= rhs;
         return lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator^(const BigInt<_>& lhs, T&& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(rhs)} ^ lhs;
+    constexpr BigInt<c, W, DW> operator^(const BigInt<c, W, DW>& lhs, T&& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(rhs)} ^ lhs;
     }
 
-    template<size_t _, typename T>
+    template<size_t c, typename W, typename DW, typename T>
         requires (!IsBigInt<std::remove_cvref_t<T>>::value)
-    constexpr BigInt<_> operator^(T&& lhs, const BigInt<_>& rhs) noexcept {
-        return BigInt<_>{std::forward<T>(lhs)} ^ rhs;
+    constexpr BigInt<c, W, DW> operator^(T&& lhs, const BigInt<c, W, DW>& rhs) noexcept {
+        return BigInt<c, W, DW>{std::forward<T>(lhs)} ^ rhs;
     }
 
 } // namespace algo
