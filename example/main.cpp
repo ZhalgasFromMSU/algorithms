@@ -1,30 +1,17 @@
 #include <iostream>
 #include <ranges>
-#include <vector>
+#include <array>
 
-void foo(std::ranges::random_access_range auto&& range) {
-    auto data = std::ranges::begin(range);
-    for (size_t i = 0; i < std::ranges::size(range); ++i) {
-        std::cerr << data[i] << std::endl;
-    }
+
+void foo(std::ranges::range auto&& x) {
+    x.abc();
+    std::cerr << sizeof(x) << std::endl;
 }
-
-class A {
-    std::vector<int> a {1, 2, 3};
-public:
-    auto begin() {
-        return a.begin();
-    }
-
-    auto end() {
-        return a.end();
-    }
-};
 
 
 int main() {
-    A a;
-
-    foo(a);
+    std::array<size_t, 100> a;
+    // foo(a);
+    foo(std::ranges::take_view(a, 100));
     return 0;
 }

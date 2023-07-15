@@ -69,7 +69,7 @@ namespace algo {
         bool is_positive = true;
 
     private:
-        template<size_t s, typename w, typename dw>
+        template<size_t s, typename W, typename DW>
         friend class BigInt;
 
         static constexpr size_t RangeWordsCount(const Range<Word> auto& range) noexcept; 
@@ -80,7 +80,7 @@ namespace algo {
         // All operations below can work properly if range points to subrange of this->binary
         constexpr void UnsignedResetBinary(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedAddRange(const Range<Word> auto& range) noexcept;
-        constexpr bool UnsignedSubRange(const Range<Word> auto& range) noexcept; // subtract by range and return if sign changes
+        constexpr bool UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept; // subtract by range and return if sign changes
         constexpr void UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept; // either this or rhs is lesser than Word
         template<size_t subint_words_capacity>
@@ -307,9 +307,7 @@ namespace algo {
     template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator+=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
-            is_positive ^= true;
-            *this -= rhs;
-            is_positive ^= true;
+            is_positive ^= UnsignedSubRange(rhs.ToView());
             return *this;
         } else {
             UnsignedAddRange(rhs.ToView());
@@ -318,24 +316,21 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr bool BigInt<words_capacity, Word, DoubleWord>::UnsignedSubRange(const Range<Word> auto& range) noexcept {
-        bool this_greater_equal = UnsignedCompare(range);
-        Word borrow = 0;
+    constexpr bool BigInt<words_capacity, Word, DoubleWord>::UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept {
+        bool this_greater_equal = UnsignedCompare(range) >= 0;
+        auto lhs_view = ToView();
+        auto rhs_view = std::views::counted(std::ranges::begin(range), RangeWordsCount(range));
+        if (!this_greater_equal) {
+            std::swap(lhs_view, rhs_view);
+        }
+
         size_t new_words_count = 0;
         size_t i = 0;
-        auto it = std::ranges::begin(range);
-        while (i < words_capacity) {
-            Word lhs {0}, rhs {0};
-            if (i < words_count) {
-                lhs = binary[i];
-            }
-            if (it != std::ranges::end(range)) {
-                rhs = *it;
-                ++it;
-            }
-            if (!this_greater_equal) {
-                std::swap(lhs, rhs);
-            }
+        Word borrow = 0;
+        auto it_lhs = std::ranges::begin(lhs_view);
+        for (auto it_rhs = std::ranges::begin(rhs_view); it_rhs != std::ranges::end(rhs_view); ++i, ++it_lhs, ++it_rhs) {
+            Word lhs = *it_lhs;
+            Word rhs = *it_rhs;
             if (rhs != kMaxWord || borrow == 0) {
                 Word tmp = rhs + borrow;
                 if (lhs < tmp) {
@@ -348,56 +343,23 @@ namespace algo {
                     new_words_count = i + 1;
                 }
             }
-            ++i;
         }
+
+        for (; borrow != 0 && it_lhs != std::ranges::end(lhs_view); ++i, ++it_lhs) {
+            if (*it_lhs == 0) {
+                binary[i] = kMaxWord;
+            } else {
+                borrow = 0;
+                binary[i] = *it_lhs - borrow;
+            }
+
+            if (binary[i]) {
+                new_words_count = i + 1;
+            }
+        }
+
         words_count = new_words_count;
         return !this_greater_equal;
-    }
-
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept {
-        Word borrow = 0;
-
-        size_t mb_words_count = 0;
-        size_t range_words_count = RangeWordsCount(range);
-        ASSERT(range_words_count <= words_count, "Subtracting greater value");
-
-        size_t i = 0;
-        auto it = std::ranges::begin(range);
-        for (; i < range_words_count; ++i, ++it) {
-            if (*it != kMaxWord || borrow == 0) {
-                Word tmp = *it + borrow;
-                if (binary[i] < tmp) {
-                    borrow = 1;
-                } else {
-                    borrow = 0;
-                }
-                binary[i] -= tmp;
-                if (binary[i]) {
-                    mb_words_count = i + 1;
-                }
-            }
-        }
-
-        while (borrow != 0 && i < words_count) {
-            if (binary[i] == 0) {
-                binary[i] = kMaxWord;
-                mb_words_count = i + 1;
-            } else {
-                binary[i] -= borrow;
-                borrow = 0;
-                if (binary[i]) {
-                    mb_words_count = i + 1;
-                }
-            }
-            ++i;
-        }
-
-        ASSERT(borrow == 0, "Subtracting greater value");
-
-        if (words_count > 0 && binary[words_count - 1] == 0) {
-            words_count = mb_words_count;
-        }
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
@@ -405,16 +367,10 @@ namespace algo {
         if (is_positive ^ rhs.is_positive) {
             UnsignedAddRange(rhs.ToView());
             return *this;
+        } else {
+            is_positive ^= UnsignedSubRange(rhs.ToView());
+            return *this;
         }
-
-        if (auto cmp = *this <=> rhs; cmp == 0) {
-            return *this = {};
-        } else if ((cmp > 0 && !is_positive) || (cmp < 0 && is_positive)) { // TODO Make subtraction for any range
-            return *this = -(rhs - *this);
-        }
-
-        UnsignedSubSmallerRange(rhs.ToView());
-        return *this;
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
