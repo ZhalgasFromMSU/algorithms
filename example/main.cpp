@@ -2,26 +2,29 @@
 #include <ranges>
 #include <vector>
 
-
-void goo(std::ranges::range auto&& s) {
-    std::cerr << "range\t" << std::ranges::size(s) << '\n';
-    for (auto it = std::ranges::begin(s); it != std::ranges::end(s); ++it) {
-        std::cerr << *it << '\t';
+void foo(std::ranges::random_access_range auto&& range) {
+    auto data = std::ranges::begin(range);
+    for (size_t i = 0; i < std::ranges::size(range); ++i) {
+        std::cerr << data[i] << std::endl;
     }
-    std::cerr << std::endl;
 }
 
-void foo(std::ranges::range auto&& s) {
-    std::cerr << "fo range\t" << std::ranges::size(s) << '\n';
-    goo(std::ranges::subrange(std::ranges::begin(s), std::ranges::begin(s) + 2));
-    std::cerr << std::endl;
-}
+class A {
+    std::vector<int> a {1, 2, 3};
+public:
+    auto begin() {
+        return a.begin();
+    }
+
+    auto end() {
+        return a.end();
+    }
+};
+
 
 int main() {
-    std::array<int, 13> ar = {1, 2, 3, 4};
-    foo(ar);
-    goo(std::ranges::subrange(ar.begin(), ar.begin() + 2));
-    std::cerr << std::endl;
-    
+    A a;
+
+    foo(a);
     return 0;
 }

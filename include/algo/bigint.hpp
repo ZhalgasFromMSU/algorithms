@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <array>
 #include <bit>
+#include <vector>
 
 namespace algo {
 
@@ -74,9 +75,12 @@ namespace algo {
         static constexpr size_t RangeWordsCount(const Range<Word> auto& range) noexcept; 
 
         constexpr auto ToView() const noexcept;
+        constexpr std::strong_ordering UnsignedCompare(const RandomAccessRange<Word> auto& range) const noexcept;
+
         // All operations below can work properly if range points to subrange of this->binary
         constexpr void UnsignedResetBinary(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedAddRange(const Range<Word> auto& range) noexcept;
+        constexpr bool UnsignedSubRange(const Range<Word> auto& range) noexcept; // subtract by range and return if sign changes
         constexpr void UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept; // either this or rhs is lesser than Word
         template<size_t subint_words_capacity>
@@ -311,6 +315,43 @@ namespace algo {
             UnsignedAddRange(rhs.ToView());
             return *this;
         }
+    }
+
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr bool BigInt<words_capacity, Word, DoubleWord>::UnsignedSubRange(const Range<Word> auto& range) noexcept {
+        bool this_greater_equal = UnsignedCompare(range);
+        Word borrow = 0;
+        size_t new_words_count = 0;
+        size_t i = 0;
+        auto it = std::ranges::begin(range);
+        while (i < words_capacity) {
+            Word lhs {0}, rhs {0};
+            if (i < words_count) {
+                lhs = binary[i];
+            }
+            if (it != std::ranges::end(range)) {
+                rhs = *it;
+                ++it;
+            }
+            if (!this_greater_equal) {
+                std::swap(lhs, rhs);
+            }
+            if (rhs != kMaxWord || borrow == 0) {
+                Word tmp = rhs + borrow;
+                if (lhs < tmp) {
+                    borrow = 1;
+                } else {
+                    borrow = 0;
+                }
+                binary[i] = lhs - tmp;
+                if (binary[i]) {
+                    new_words_count = i + 1;
+                }
+            }
+            ++i;
+        }
+        words_count = new_words_count;
+        return !this_greater_equal;
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
@@ -659,8 +700,9 @@ namespace algo {
         //return *this;
     //}
 
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::operator~() const noexcept {
+    template<size_t words_capacity, typename W, typename DW>
+    constexpr BigInt<words_capacity, W, DW> BigInt<words_capacity, W, DW>::operator~() const noexcept {
+        static_assert(words_capacity != -1ull, "Can't negate unbound BigInt");
         BigInt ret;
         ret.is_positive = is_positive;
         for (size_t i = 0; i < words_capacity; ++i) {
@@ -668,12 +710,11 @@ namespace algo {
                 ret.words_count = i + 1;
             }
         }
-
         return ret;
     }
 
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator^=(const BigInt& other) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW>& BigInt<c, W, DW>::operator^=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
         words_count = 0;
         for (size_t i = 0; i < iterations; ++i) {
@@ -684,8 +725,8 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator|=(const BigInt& other) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW>& BigInt<c, W, DW>::operator|=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
         words_count = iterations;
         for (size_t i = 0; i < iterations; ++i) {
@@ -694,8 +735,8 @@ namespace algo {
         return *this;
     }
 
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator&=(const BigInt& other) noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr BigInt<c, W, DW>& BigInt<c, W, DW>::operator&=(const BigInt& other) noexcept {
         const size_t iterations = std::max(words_count, other.words_count);
         words_count = 0;
         for (size_t i = 0; i < iterations; ++i) {
@@ -739,22 +780,19 @@ namespace algo {
         if (IsZero()) {
             return false;
         }
-
         for (size_t i = 0; i < words_count - 1; ++i) {
             if (binary[i]) {
                 return false;
             }
         }
-
         return (binary[words_count - 1] & (binary[words_count - 1] - 1)) == 0;
     }
 
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr size_t BigInt<words_capacity, Word, DoubleWord>::BitWidth() const noexcept {
+    template<size_t c, typename W, typename DW>
+    constexpr size_t BigInt<c, W, DW>::BitWidth() const noexcept {
         if (IsZero()) {
             return 0;
         }
-
         return (words_count - 1) * 32 + std::bit_width(binary[words_count - 1]);
     }
 
@@ -767,10 +805,10 @@ namespace algo {
     constexpr size_t BigInt<words_capacity, Word, DoubleWord>::RangeWordsCount(const Range<Word> auto& range) noexcept {
         if constexpr (std::ranges::random_access_range<decltype(range)>) {
             size_t size = std::ranges::size(range);
+            ASSERT(size <= words_capacity, "Range is too big");
             auto data = std::ranges::begin(range);
             for (size_t i = 0; i < size; ++i) {
                 if (data[size - 1 - i]) {
-                    ASSERT(size - i <= words_capacity, "Range is too big");
                     return size - i;
                 }
             }
@@ -790,6 +828,25 @@ namespace algo {
     }
 
     template<size_t c, typename W, typename DW>
+    constexpr std::strong_ordering BigInt<c, W, DW>::UnsignedCompare(const RandomAccessRange<W> auto& range) const noexcept {
+        size_t range_words_count = RangeWordsCount(range);
+
+        if (words_count < range_words_count) {
+            return std::strong_ordering::less;
+        } else if (words_count > range_words_count) {
+            return std::strong_ordering::greater;
+        }
+
+        auto range_data = std::ranges::begin(range);
+        for (size_t i = 0; i < words_count; ++i) {
+            if (auto cmp = binary[words_count - 1 - i] <=> range_data[words_count - 1 - i]; cmp != 0) {
+                return cmp;
+            }
+        }
+        return std::strong_ordering::equal;
+    }
+
+    template<size_t c, typename W, typename DW>
     constexpr bool BigInt<c, W, DW>::operator==(const BigInt& rhs) const noexcept {
         return (*this <=> rhs) == 0;
     }
@@ -798,36 +855,13 @@ namespace algo {
     constexpr std::strong_ordering BigInt<c, W, DW>::operator<=>(const BigInt& rhs) const noexcept {
         if (IsZero() && rhs.IsZero()) {
             return std::strong_ordering::equal;
-        } else if (IsZero()) {
-            return rhs.is_positive ? std::strong_ordering::less : std::strong_ordering::greater;
-        } else if (IsZero()) {
-            return is_positive ? std::strong_ordering::greater : std::strong_ordering::less;
-        }
-
-        if (is_positive ^ rhs.is_positive) {
+        } else if (is_positive ^ rhs.is_positive) {
             return is_positive <=> rhs.is_positive;
+        } else if (auto cmp = UnsignedCompare(rhs.ToView()); is_positive) {
+            return cmp;
+        } else {
+            return 0 <=> cmp;
         }
-
-        if (words_count != rhs.words_count) {
-            if (is_positive) {
-                return words_count <=> rhs.words_count;
-            } else {
-                return rhs.words_count <=> words_count;
-            }
-        }
-
-        for (size_t i = 0; i < words_count; ++i) {
-            size_t idx = words_count - 1 - i;
-            if (binary[idx] != rhs.binary[idx]) {
-                if (is_positive) {
-                    return binary[idx] <=> rhs.binary[idx];
-                } else {
-                    return rhs.binary[idx] <=> binary[idx];
-                }
-            }
-        }
-
-        return std::strong_ordering::equal;
     }
 
     // Arithmetic opeartors
