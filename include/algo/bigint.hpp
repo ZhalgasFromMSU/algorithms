@@ -79,7 +79,7 @@ namespace algo {
 
         // All operations below can work properly if range points to subrange of this->binary
         constexpr void UnsignedResetBinary(const Range<Word> auto& range) noexcept;
-        constexpr void UnsignedAddRange(const Range<Word> auto& range) noexcept;
+        constexpr void UnsignedAddRange(const RandomAccessRange<Word> auto& range) noexcept;
         constexpr bool UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept; // subtract by range and return if sign changes
         constexpr void UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept; // either this or rhs is lesser than Word
@@ -258,79 +258,71 @@ namespace algo {
     constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedResetBinary(const Range<Word> auto& range) noexcept {
         words_count = 0;
         size_t counter = 0;
-        binary = {};
         for (auto it = std::ranges::begin(range); it != std::ranges::end(range); ++it) {
             if (*it > 0) {
                 binary[counter] = *it;
                 words_count = counter + 1;
             }
-
             ++counter;
         }
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedAddRange(const Range<Word> auto& range) noexcept {
-        Word carry = 0;
-
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedAddRange(const RandomAccessRange<Word> auto& range) noexcept {
+        auto range_data = std::ranges::begin(range);
         size_t range_words_count = RangeWordsCount(range);
         size_t i = 0;
-        auto it = std::ranges::begin(range);
-        for (; i < range_words_count; ++i, ++it) {
-            if (*it != kMaxWord || carry == 0) {
-                Word tmp = *it + carry;
-                if (kMaxWord - binary[i] < tmp) {
+        for (Word carry = 0; carry != 0 || i < range_words_count; ++i) {
+            ASSERT(i < words_capacity, "Addition overflow");
+
+            Word lhs {0}, rhs {0};
+            if (i < words_count) {
+                lhs = binary[i];
+            }
+            if (i < range_words_count) {
+                rhs = range_data[i];
+            }
+
+            if (rhs != kMaxWord || carry == 0) {
+                Word tmp = rhs + carry;
+                if (kMaxWord - lhs < tmp) {
                     carry = 1;
                 } else {
                     carry = 0;
                 }
-                binary[i] += tmp; // safe to do so because Word is is_modulo type
+                binary[i] = lhs + tmp;
             }
         }
 
-        while (carry != 0 && i < words_capacity) {
-            if (kMaxWord == binary[i]) {
-                binary[i] = 0;
-            } else {
-                binary[i] += carry;
-                carry = 0;
-            }
-            ++i;
-        }
-
-        ASSERT(carry == 0, "Addition overflow");
         if (i > words_count) {
             words_count = i;
         }
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator+=(const BigInt& rhs) noexcept {
-        if (is_positive ^ rhs.is_positive) {
-            is_positive ^= UnsignedSubRange(rhs.ToView());
-            return *this;
-        } else {
-            UnsignedAddRange(rhs.ToView());
-            return *this;
-        }
-    }
-
-    template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr bool BigInt<words_capacity, Word, DoubleWord>::UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept {
+        auto lhs_data = std::ranges::cbegin(binary);
+        size_t lhs_wc = words_count;
+
+        auto rhs_data = std::ranges::cbegin(range);
+        size_t rhs_wc = RangeWordsCount(range);
+
         bool this_greater_equal = UnsignedCompare(range) >= 0;
-        auto lhs_view = ToView();
-        auto rhs_view = std::views::counted(std::ranges::begin(range), RangeWordsCount(range));
         if (!this_greater_equal) {
-            std::swap(lhs_view, rhs_view);
+            std::swap(lhs_data, rhs_data);
+            std::swap(lhs_wc, rhs_wc);
         }
 
-        size_t new_words_count = 0;
         size_t i = 0;
-        Word borrow = 0;
-        auto it_lhs = std::ranges::begin(lhs_view);
-        for (auto it_rhs = std::ranges::begin(rhs_view); it_rhs != std::ranges::end(rhs_view); ++i, ++it_lhs, ++it_rhs) {
-            Word lhs = *it_lhs;
-            Word rhs = *it_rhs;
+        for (Word borrow = 0; borrow != 0 || i < rhs_wc; ++i) {
+            Word lhs {0}, rhs {0};
+            if (i < lhs_wc) {
+                lhs = lhs_data[i];
+            }
+            if (i < rhs_wc) {
+                rhs = rhs_data[i];
+            }
+
             if (rhs != kMaxWord || borrow == 0) {
                 Word tmp = rhs + borrow;
                 if (lhs < tmp) {
@@ -340,37 +332,36 @@ namespace algo {
                 }
                 binary[i] = lhs - tmp;
                 if (binary[i]) {
-                    new_words_count = i + 1;
+                    words_count = i + 1;
                 }
             }
         }
 
-        for (; borrow != 0 && it_lhs != std::ranges::end(lhs_view); ++i, ++it_lhs) {
-            if (*it_lhs == 0) {
-                binary[i] = kMaxWord;
-            } else {
-                borrow = 0;
-                binary[i] = *it_lhs - borrow;
-            }
-
-            if (binary[i]) {
-                new_words_count = i + 1;
-            }
+        if (lhs_data[lhs_wc - 1] != 0) {
+            words_count = lhs_wc;
         }
 
-        words_count = new_words_count;
         return !this_greater_equal;
+    }
+
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator+=(const BigInt& rhs) noexcept {
+        if (is_positive ^ rhs.is_positive) {
+            is_positive ^= UnsignedSubRange(rhs.ToView());
+        } else {
+            UnsignedAddRange(rhs.ToView());
+        }
+        return *this;
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator-=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
             UnsignedAddRange(rhs.ToView());
-            return *this;
         } else {
             is_positive ^= UnsignedSubRange(rhs.ToView());
-            return *this;
         }
+        return *this;
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>

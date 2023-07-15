@@ -95,8 +95,8 @@ TEST_F(TestBigInt, Add) {
 
     SetSeed(1);
     for (size_t i = 0; i < 10000; ++i) {
-        std::string lhs = RandomBinary(RandomInt(1012, 1023));
-        std::string rhs = RandomBinary(RandomInt(1012, 1023));
+        std::string lhs = RandomBinary(RandomInt(12, 1023));
+        std::string rhs = RandomBinary(RandomInt(12, 1023));
         std::string sum = NaiveAdd(lhs, rhs);
 
         BI32 lhs_bi {lhs};
@@ -117,8 +117,8 @@ TEST_F(TestBigInt, Mul) {
 
     SetSeed(2);
     for (size_t i = 0; i < 100; ++i) {
-        std::string lhs = RandomBinary(RandomInt(500, 512));
-        std::string rhs = RandomBinary(RandomInt(28, 32));
+        std::string lhs = RandomBinary(RandomInt(20, 512));
+        std::string rhs = RandomBinary(RandomInt(28, 512));
         std::string mul = NaiveMul(lhs, rhs);
 
         BI32 lhs_bi {lhs};
