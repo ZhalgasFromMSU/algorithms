@@ -81,11 +81,10 @@ namespace algo {
         constexpr void UnsignedResetBinary(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedAddRange(const RandomAccessRange<Word> auto& range) noexcept;
         constexpr bool UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept; // subtract by range and return if sign changes
-        constexpr void UnsignedSubSmallerRange(const Range<Word> auto& range) noexcept;
-        constexpr void UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept; // either this or rhs is lesser than Word
+        constexpr void UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept; // either this or rhs is lesser than Word
         template<size_t subint_words_capacity>
         constexpr void KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept;
-        constexpr void UnsignedMultiplyByRange(const Range<Word> auto& range) noexcept;
+        constexpr void UnsignedMultiplyByRange(const RandomAccessRange<Word> auto& range) noexcept;
         constexpr BigInt ShortUnsignedDivideBy(Word) noexcept; // returns remainder
         constexpr BigInt UnsignedDivideByRange(const Range<Word> auto& range) noexcept; // returns remainder
 
@@ -155,7 +154,7 @@ namespace algo {
                 }
 
                 ASSERT(str[i] >= '0' && str[i] <= '9');
-                UnsignedShortMultiplyByRange(std::ranges::single_view(static_cast<Word>(10)));
+                UnsignedShortMulRange(std::ranges::single_view(static_cast<Word>(10)));
                 UnsignedAddRange(std::ranges::single_view(static_cast<Word>(str[i] - '0')));
             }
         }
@@ -365,7 +364,13 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMultiplyByRange(const Range<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept {
+        size_t range_words_count = RangeWordsCount(range);
+        ASSERT(words_count <= 1 || range_words_count <= 1, "Short multiplication not applicable");
+    }
+
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept {
         const size_t old_words_count = words_count;
         const size_t range_words_count = RangeWordsCount(range);
         ASSERT(old_words_count <= 1 || range_words_count <= 1, "Short multiplication not applicable");
@@ -445,12 +450,12 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedMultiplyByRange(const Range<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedMultiplyByRange(const RandomAccessRange<Word> auto& range) noexcept {
         size_t range_words_count = RangeWordsCount(range);
 
         if (words_count == 1 || range_words_count == 1) {
             // Case when multiplication can be done linearly, without extra stack allocation for temporary result
-            UnsignedShortMultiplyByRange(range);
+            UnsignedShortMulRange(range);
         } else if constexpr (words_capacity <= 40) {
             //// for small numbers do quadratic multiplication
             BigInt ret;
@@ -470,7 +475,7 @@ namespace algo {
                 else TRY_OPTIMIZE(words_capacity / 2 + 1)
                 else {
                     BigInt tmp {*this};
-                    tmp.UnsignedShortMultiplyByRange(std::ranges::single_view(*it));
+                    tmp.UnsignedShortMulRange(std::ranges::single_view(*it));
                     tmp <<= i * kWordBSize;
                     ret.UnsignedAddRange(tmp.ToView());
                 }
