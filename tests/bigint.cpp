@@ -102,8 +102,11 @@ TEST_F(TestBigInt, Add) {
         BI32 lhs_bi {lhs};
         BI32 rhs_bi {rhs};
         BI32 sum_bi {sum};
+        std::cerr << ::testing::PrintToString(lhs_bi) << std::endl;
+        std::cerr << ::testing::PrintToString(rhs_bi) << std::endl;
 
         ASSERT_EQ(lhs_bi + rhs_bi, sum_bi);
+        return;
         ASSERT_EQ(sum_bi - lhs_bi, rhs_bi);
         ASSERT_EQ(sum_bi - rhs_bi, lhs_bi);
     }

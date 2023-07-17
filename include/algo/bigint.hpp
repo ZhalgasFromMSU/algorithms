@@ -3,14 +3,9 @@
 #include <helpers/assert.hpp>
 #include <helpers/concepts.hpp>
 
-#include <compare>
-#include <algorithm>
-#include <iterator>
 #include <limits>
-#include <type_traits>
-#include <array>
-#include <bit>
 #include <vector>
+#include <bit>
 
 namespace algo {
 
@@ -63,7 +58,7 @@ namespace algo {
         constexpr bool IsPowerOf2() const noexcept;
         constexpr size_t BitWidth() const noexcept;
 
-        Storage binary = {}; // number is storred right to left, e.g. most significant bits are at the end of an array
+        Storage binary; // number is storred right to left, e.g. most significant bits are at the end of an array
                              // can't use bitset here, because not constexpr (since C++23)
         size_t words_count = 0;
         bool is_positive = true;
@@ -75,19 +70,19 @@ namespace algo {
         static constexpr size_t RangeWordsCount(const Range<Word> auto& range) noexcept; 
 
         constexpr auto ToView() const noexcept;
-        constexpr std::strong_ordering UnsignedCompare(const RandomAccessRange<Word> auto& range) const noexcept;
+        constexpr std::strong_ordering UCompare(const RandomAccessRange<Word> auto& range) const noexcept;
 
         // All operations below can work properly if range points to subrange of this->binary
-        constexpr void UnsignedResetBinary(const Range<Word> auto& range) noexcept;
-        constexpr void UnsignedAddRange(const RandomAccessRange<Word> auto& range) noexcept;
-        constexpr bool UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept; // subtract by range and return if sign changes
-        constexpr void UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept; // either this or rhs is lesser than Word
+        constexpr void UResetBinary(const Range<Word> auto& range) noexcept;
+        constexpr void UAddRange(const RandomAccessRange<Word> auto& range) noexcept;
+        constexpr bool USubRange(const RandomAccessRange<Word> auto& range) noexcept; // subtract by range and return if sign changes
+        constexpr void UMulByShortRange(const RandomAccessRange<Word> auto& range) noexcept; // either this or rhs is lesser than Word
         template<size_t subint_words_capacity>
-        constexpr void KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept;
-        constexpr void UnsignedMultiplyByRange(const RandomAccessRange<Word> auto& range) noexcept;
-        constexpr BigInt ShortUnsignedDivideBy(Word) noexcept; // returns remainder
-        constexpr BigInt UnsignedDivideBySimilarRange(const RandomAccessRange<Word> auto& range) noexcept; // len(this / rhs) < 1 word
-        constexpr BigInt UnsignedDivideByRange(const Range<Word> auto& range) noexcept; // returns remainder
+        constexpr void KaratsubaUMulByRange(const Range<Word> auto& range) noexcept;
+        constexpr void UMulByRange(const RandomAccessRange<Word> auto& range) noexcept;
+        constexpr BigInt UDivByWord(Word rhs) noexcept; // returns remainder
+        constexpr BigInt UDivBySameRange(const RandomAccessRange<Word> auto& range) noexcept; // len(this / rhs) < 1 word
+        constexpr BigInt UDivByRange(const Range<Word> auto& range) noexcept; // returns remainder
 
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
     };
@@ -155,8 +150,8 @@ namespace algo {
                 }
 
                 ASSERT(str[i] >= '0' && str[i] <= '9');
-                UnsignedShortMulRange(std::ranges::single_view(static_cast<Word>(10)));
-                UnsignedAddRange(std::ranges::single_view(static_cast<Word>(str[i] - '0')));
+                UMulByShortRange(std::ranges::single_view(static_cast<Word>(10)));
+                UAddRange(std::ranges::single_view(static_cast<Word>(str[i] - '0')));
             }
         }
     }
@@ -255,7 +250,7 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedResetBinary(const Range<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UResetBinary(const Range<Word> auto& range) noexcept {
         words_count = 0;
         size_t counter = 0;
         for (auto it = std::ranges::begin(range); it != std::ranges::end(range); ++it) {
@@ -268,11 +263,11 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedAddRange(const RandomAccessRange<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UAddRange(const RandomAccessRange<Word> auto& range) noexcept {
         auto range_data = std::ranges::begin(range);
-        size_t range_words_count = RangeWordsCount(range);
+        size_t range_words_count = std::ranges::size(range);
         size_t i = 0;
-        for (Word carry = 0; carry != 0 || i < range_words_count; ++i) {
+        for (bool carry = 0; carry || i < range_words_count; ++i) {
             ASSERT(i < words_capacity, "Addition overflow");
 
             Word lhs {0}, rhs {0};
@@ -283,15 +278,21 @@ namespace algo {
                 rhs = range_data[i];
             }
 
-            if (rhs != kMaxWord || carry == 0) {
-                Word tmp = rhs + carry;
-                if (kMaxWord - lhs < tmp) {
-                    carry = 1;
-                } else {
-                    carry = 0;
+            if (rhs != kMaxWord || !carry) {
+                Word tmp = rhs;
+                if (carry) {
+                    tmp += 1;
                 }
+
+                if (kMaxWord - lhs < tmp) {
+                    carry = true;
+                } else {
+                    carry = false;
+                }
+
                 binary[i] = lhs + tmp;
             }
+            std::cerr << lhs << '\t' << rhs << '\t' << binary[i] << std::endl;
         }
 
         if (i > words_count) {
@@ -300,14 +301,14 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr bool BigInt<words_capacity, Word, DoubleWord>::UnsignedSubRange(const RandomAccessRange<Word> auto& range) noexcept {
+    constexpr bool BigInt<words_capacity, Word, DoubleWord>::USubRange(const RandomAccessRange<Word> auto& range) noexcept {
         auto lhs_data = std::ranges::cbegin(binary);
         size_t lhs_wc = words_count;
 
         auto rhs_data = std::ranges::cbegin(range);
         size_t rhs_wc = RangeWordsCount(range);
 
-        bool this_greater_equal = UnsignedCompare(range) >= 0;
+        bool this_greater_equal = UCompare(range) >= 0;
         if (!this_greater_equal) {
             std::swap(lhs_data, rhs_data);
             std::swap(lhs_wc, rhs_wc);
@@ -347,9 +348,9 @@ namespace algo {
     template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator+=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
-            is_positive ^= UnsignedSubRange(rhs.ToView());
+            is_positive ^= USubRange(rhs.ToView());
         } else {
-            UnsignedAddRange(rhs.ToView());
+            UAddRange(rhs.ToView());
         }
         return *this;
     }
@@ -357,15 +358,15 @@ namespace algo {
     template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator-=(const BigInt& rhs) noexcept {
         if (is_positive ^ rhs.is_positive) {
-            UnsignedAddRange(rhs.ToView());
+            UAddRange(rhs.ToView());
         } else {
-            is_positive ^= UnsignedSubRange(rhs.ToView());
+            is_positive ^= USubRange(rhs.ToView());
         }
         return *this;
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UMulByShortRange(const RandomAccessRange<Word> auto& range) noexcept {
         size_t range_words_count = RangeWordsCount(range);
 
         if (words_count == 0 || range_words_count == 0) {
@@ -414,7 +415,7 @@ namespace algo {
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
     template<size_t subint_words_capacity>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::KaratsubaUMulByRange(const Range<Word> auto& range) noexcept {
         // https://www.geeksforgeeks.org/karatsuba-algorithm-for-fast-multiplication-using-divide-and-conquer-algorithm/
         using SmallInt = BigInt<subint_words_capacity>; // Multiplication result can fit into SmallInt
 
@@ -431,22 +432,22 @@ namespace algo {
         this_h *= rhs_h;
         this_l *= rhs_l;
 
-        UnsignedResetBinary(this_h.ToView());
+        UResetBinary(this_h.ToView());
         *this <<= mid_thr * kWordBSize;
-        UnsignedAddRange(mix.ToView());
+        UAddRange(mix.ToView());
         UnsignedSubSmallerRange(this_h.ToView());
         UnsignedSubSmallerRange(this_l.ToView());
         *this <<= mid_thr * kWordBSize;
-        UnsignedAddRange(this_l.ToView());
+        UAddRange(this_l.ToView());
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedMultiplyByRange(const RandomAccessRange<Word> auto& range) noexcept {
+    constexpr void BigInt<words_capacity, Word, DoubleWord>::UMulByRange(const RandomAccessRange<Word> auto& range) noexcept {
         size_t range_words_count = RangeWordsCount(range);
 
         if (words_count == 1 || range_words_count == 1) {
             // Case when multiplication can be done linearly, without extra stack allocation for temporary result
-            UnsignedShortMulRange(range);
+            UMulByShortRange(range);
         } else if constexpr (words_capacity <= 40) {
             //// for small numbers do quadratic multiplication
             BigInt ret;
@@ -455,9 +456,9 @@ namespace algo {
                 // Try to perform multiplication on smaller type because we don't need to allocate whole array
 #define TRY_OPTIMIZE(cap) if (words_count + i + 1 < cap) { \
                               BigInt<cap> tmp {ToView()}; \
-                              tmp.UnsignedShortMulRange(std::ranges::single_view(*it)); \
+                              tmp.UMulByShortRange(std::ranges::single_view(*it)); \
                               tmp <<= i * kWordBSize; \
-                              ret.UnsignedAddRange(tmp.ToView()); \
+                              ret.UAddRange(tmp.ToView()); \
                           }
 
                 TRY_OPTIMIZE(words_capacity / 16 + 1)
@@ -466,13 +467,13 @@ namespace algo {
                 else TRY_OPTIMIZE(words_capacity / 2 + 1)
                 else {
                     BigInt tmp {*this};
-                    tmp.UnsignedShortMulRange(std::ranges::single_view(*it));
+                    tmp.UMulByShortRange(std::ranges::single_view(*it));
                     tmp <<= i * kWordBSize;
-                    ret.UnsignedAddRange(tmp.ToView());
+                    ret.UAddRange(tmp.ToView());
                 }
 #undef TRY_OPTIMIZE
             }
-            UnsignedResetBinary(ret.ToView());
+            UResetBinary(ret.ToView());
         } else {
             size_t max_size = words_count + range_words_count;
             // If result fits into smaller array, then perform multiplication using smaller array
@@ -482,7 +483,7 @@ namespace algo {
             TRY_OPTIMIZE(words_capacity / 4 + 1)
             TRY_OPTIMIZE(words_capacity / 2 + 1)
 #undef TRY_OPTIMIZE
-            KaratsubaMultiplyByRange<words_capacity, Word, DoubleWord>(range);
+            KaratsubaUMulByRange<words_capacity, Word, DoubleWord>(range);
         }
     }
 
@@ -493,12 +494,12 @@ namespace algo {
         }
 
         is_positive ^= !rhs.is_positive;
-        UnsignedMultiplyByRange(rhs.ToView());
+        UMulByRange(rhs.ToView());
         return *this;
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::ShortUnsignedDivideBy(Word rhs) noexcept {
+    constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::UDivByWord(Word rhs) noexcept {
         BigInt remainder;
         DoubleWord window = 0;
         for (size_t i = 0; i < words_count; ++i) {
@@ -516,6 +517,38 @@ namespace algo {
         }
 
         return window;
+    }
+
+    template<size_t words_capacity, typename Word, typename DoubleWord>
+    constexpr BigInt<words_capacity, Word, DoubleWord>
+        BigInt<words_capacity, Word, DoubleWord>::UDivBySameRange(const RandomAccessRange<Word> auto& range) noexcept
+    {
+        // Use binary search for division
+        size_t range_words_count = RangeWordsCount(range);
+        ASSERT(words_count >= range_words_count && words_count - range_words_count <= 1,
+               "Divisor and divident should be of similar size");
+
+        Word l {0}, r {kMaxWord};
+        while (l <= r) {
+            Word m = l / 2 + r / 2 + (l & r & 1);
+            BigInt<words_capacity + 1, Word, DoubleWord> ret {m};
+            ret.UMulByShortRange(range);
+            if (auto cmp = UCompare(ret.ToView()); cmp == 0) {
+                UResetBinary(std::ranges::single_view(m));
+                return 0;
+            } else if (cmp < 0) {
+                r = m - 1;
+            } else {
+                ret.USubRange(ToView());
+                if (ret.UCompare(range) < 0) {
+                    UResetBinary(std::ranges::single_view(m));
+                    ret.is_positive ^= true;
+                    return ret;
+                }
+                l = m + 1;
+            }
+        }
+        ASSERT(false, "Unreachable");
     }
 
     //template<size_t words_capacity, typename Word, typename DoubleWord>
@@ -765,7 +798,7 @@ namespace algo {
     }
 
     template<size_t c, typename W, typename DW>
-    constexpr std::strong_ordering BigInt<c, W, DW>::UnsignedCompare(const RandomAccessRange<W> auto& range) const noexcept {
+    constexpr std::strong_ordering BigInt<c, W, DW>::UCompare(const RandomAccessRange<W> auto& range) const noexcept {
         size_t range_words_count = RangeWordsCount(range);
 
         if (words_count < range_words_count) {
@@ -794,7 +827,7 @@ namespace algo {
             return std::strong_ordering::equal;
         } else if (is_positive ^ rhs.is_positive) {
             return is_positive <=> rhs.is_positive;
-        } else if (auto cmp = UnsignedCompare(rhs.ToView()); is_positive) {
+        } else if (auto cmp = UCompare(rhs.ToView()); is_positive) {
             return cmp;
         } else {
             return 0 <=> cmp;
