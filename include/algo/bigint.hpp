@@ -86,6 +86,7 @@ namespace algo {
         constexpr void KaratsubaMultiplyByRange(const Range<Word> auto& range) noexcept;
         constexpr void UnsignedMultiplyByRange(const RandomAccessRange<Word> auto& range) noexcept;
         constexpr BigInt ShortUnsignedDivideBy(Word) noexcept; // returns remainder
+        constexpr BigInt UnsignedDivideBySimilarRange(const RandomAccessRange<Word> auto& range) noexcept; // len(this / rhs) < 1 word
         constexpr BigInt UnsignedDivideByRange(const Range<Word> auto& range) noexcept; // returns remainder
 
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
@@ -366,40 +367,29 @@ namespace algo {
     template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept {
         size_t range_words_count = RangeWordsCount(range);
+
+        if (words_count == 0 || range_words_count == 0) {
+            binary[0] = 0;
+            words_count = 0;
+            return;
+        }
+
         ASSERT(words_count <= 1 || range_words_count <= 1, "Short multiplication not applicable");
-    }
 
-    template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr void BigInt<words_capacity, Word, DoubleWord>::UnsignedShortMulRange(const RandomAccessRange<Word> auto& range) noexcept {
-        const size_t old_words_count = words_count;
-        const size_t range_words_count = RangeWordsCount(range);
-        ASSERT(old_words_count <= 1 || range_words_count <= 1, "Short multiplication not applicable");
-
-        const size_t iterations = std::max(words_count, range_words_count);
-
-        auto begin = std::ranges::begin(range);
-        auto end = std::ranges::end(range);
-
-        // It is possible that &rhs == this, so values are storred in buffer
-        Word lhs_word_buf = binary[0];
-        Word rhs_word_buf = *begin;
-
+        auto range_data = std::ranges::begin(range);
+        size_t i = 0;
+        Word lhs {binary[0]}, rhs {range_data[0]};
         binary[0] = 0;
-        for (size_t i = 0; i < iterations; ++i) {
-            if (begin != end) {
-                ++begin; // value already stored in buffer
+        for (; i < words_count || i < range_words_count; ++i) {
+            DoubleWord prod = static_cast<DoubleWord>(lhs) * rhs;
+            if (i + 1 < words_count) {
+                lhs = binary[i + 1];
+            } else if (i + 1 < range_words_count) {
+                rhs = range_data[i + 1];
             }
-            DoubleWord prod = lhs_word_buf;
-            prod *= rhs_word_buf;
-            if (i + 1 < words_capacity) {
-                if (begin != end) {
-                    rhs_word_buf = *begin;
-                } else {
-                    lhs_word_buf = binary[i + 1];
-                }
-            }
-            Word prod_l = static_cast<Word>(prod & kMaxWord);
-            Word prod_h = static_cast<Word>(prod >> kWordBSize);
+
+            Word prod_l = prod;
+            Word prod_h = prod >> kWordBSize;
 
             if (i + 1 < words_capacity) {
                 binary[i + 1] = prod_h;
@@ -411,13 +401,14 @@ namespace algo {
                 ASSERT(i + 1 < words_capacity, "Multiplication overflow");
                 binary[i + 1] += 1;
             }
+
             binary[i] += prod_l;
         }
 
-        if (iterations < words_capacity && binary[iterations]) {
-            words_count = iterations + 1;
+        if (i < words_capacity && binary[i] != 0) {
+            words_count = i + 1;
         } else {
-            words_count = iterations;
+            words_count = i;
         }
     }
 
@@ -464,7 +455,7 @@ namespace algo {
                 // Try to perform multiplication on smaller type because we don't need to allocate whole array
 #define TRY_OPTIMIZE(cap) if (words_count + i + 1 < cap) { \
                               BigInt<cap> tmp {ToView()}; \
-                              tmp.UnsignedShortMultiplyByRange(std::ranges::single_view(*it)); \
+                              tmp.UnsignedShortMulRange(std::ranges::single_view(*it)); \
                               tmp <<= i * kWordBSize; \
                               ret.UnsignedAddRange(tmp.ToView()); \
                           }
@@ -509,28 +500,22 @@ namespace algo {
     template<size_t words_capacity, typename Word, typename DoubleWord>
     constexpr BigInt<words_capacity, Word, DoubleWord> BigInt<words_capacity, Word, DoubleWord>::ShortUnsignedDivideBy(Word rhs) noexcept {
         BigInt remainder;
-        bool set = false;
-        const size_t iterations = words_count;
-        words_count = 0;
         DoubleWord window = 0;
-        for (size_t i = 0; i < iterations; ++i) {
-            window = (window << kWordBSize) + binary[iterations - 1 - i];
+        for (size_t i = 0; i < words_count; ++i) {
+            window = (window << kWordBSize) + binary[words_count - 1 - i];
             if (window >= rhs) {
-                binary[iterations - 1 - i] = window / rhs;
-                if (!set && binary[iterations - 1 - i]) {
-                    set = true;
-                    words_count = iterations - i;
-                }
+                binary[words_count - 1 - i] = window / rhs;
                 window %= rhs;
             } else {
-                binary[iterations - 1 - i] = 0;
+                binary[words_count - 1 - i] = 0;
             }
         }
 
-        if ((remainder.binary[0] = static_cast<Word>(window))) {
-            remainder.words_count = 1;
+        if (words_count > 0 && binary[words_count - 1] == 0) {
+            words_count -= 1;
         }
-        return remainder;
+
+        return window;
     }
 
     //template<size_t words_capacity, typename Word, typename DoubleWord>

@@ -14,8 +14,8 @@ namespace testing {
     std::string PrintToString<BI32>(const BI32& bi) {
         std::stringstream ss;
         ss << bi.words_count << ' ' << (bi.is_positive ? '+' : '-');
-        for (auto it = bi.binary.rbegin(); it != bi.binary.rend(); ++it) {
-            ss << ' ' << *it;
+        for (size_t i = 0; i < bi.words_count; ++i) {
+            ss << ' ' << bi.binary[bi.words_count - 1 - i];
         }
         return std::move(ss).str();
     }
