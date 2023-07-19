@@ -3,12 +3,12 @@
 #include <array>
 
 
-void foo(const std::ranges::random_access_range auto& x) {
-    auto data = std::ranges::begin(x);
-    std::cerr << data[0] << std::endl;
-}
-
 int main() {
-    foo(std::ranges::single_view(1));
+    size_t count = 0;
+    for (int i = 0; i < 1'000'000'0; ++i) {
+        std::array<size_t, 1'000'000> a {};
+        count += a[599'000];
+    }
+    std::cerr << count << std::endl;
     return 0;
 }
