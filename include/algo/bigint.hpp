@@ -615,11 +615,12 @@ namespace algo {
         } else {
             BigInt r, q; // remainder and quotient
             for (size_t i = 0; i < words_count; ++i) {
-                r <<= kWordBSize;
                 q <<= kWordBSize;
+                r <<= kWordBSize;
+                r.UAddRange(std::ranges::single_view(binary[words_count - 1 - i]));
                 if (auto cmp = r.UCompare(range); cmp >= 0) {
                     BigInt tmp = r;
-                    r = tmp.UDivBySameRange(range);
+                    r.UResetBinary(tmp.UDivBySameRange(range).ToView());
                     ASSERT(tmp.words_count == 1);
                     q.UAddRange(tmp.ToView());
                 }

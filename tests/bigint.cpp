@@ -171,8 +171,6 @@ TEST_F(TestBigInt, Mul) {
                   "311341061497458101587460297223439894756736676913780"
                   "378542296892758204127074383037451088648"};
         
-        std::cerr << mul.words_count << '\t' << rhs.words_count << '\t' << lhs.words_count << std::endl;
-        std::cerr << testing::PrintToString<BI32>(mul) << '\n' << testing::PrintToString<BI32>(rhs) << '\n';
         ASSERT_EQ(mul / rhs, lhs);
     }
     return;
