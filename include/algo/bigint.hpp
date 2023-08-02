@@ -60,6 +60,7 @@ namespace algo {
         constexpr bool IsPowerOf2() const noexcept;
         constexpr size_t BitWidth() const noexcept;
         constexpr std::string ToString(Word base = 10) const noexcept;
+        constexpr auto ToView() const noexcept;
 
         std::conditional_t<
             kInfInt, // TODO add support for vector
@@ -77,7 +78,6 @@ namespace algo {
         static constexpr bool RangeIsZero(const RandomAccessRange<Word> auto& range) noexcept;
         static constexpr size_t RangeBitWidth(const RandomAccessRange<Word> auto& range) noexcept;
 
-        constexpr auto ToView() const noexcept;
         constexpr std::strong_ordering UCompare(const RandomAccessRange<Word> auto& range) const noexcept;
 
         // All operations below can work properly if range points to subrange of this->binary
@@ -93,7 +93,7 @@ namespace algo {
 
         // Division
         constexpr Word UDivByWord(Word rhs) noexcept; // returns remainder
-        constexpr BigInt UDivBySameRange(const RandomAccessRange<Word> auto& range) noexcept; // len(this / rhs) < 1 word
+        constexpr BigInt UDivBySameRange(const RandomAccessRange<Word> auto& range) noexcept; // result of division will fit into Word type
         constexpr BigInt UDivByRange(const RandomAccessRange<Word> auto& range) noexcept; // returns remainder
 
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
@@ -174,9 +174,10 @@ namespace algo {
     }
 
     template<size_t words_capacity, typename Word, typename DoubleWord>
-    constexpr BigInt<words_capacity, Word, DoubleWord>::BigInt(DoubleWord from, bool is_positive) noexcept
+    constexpr BigInt<words_capacity, Word, DoubleWord>::BigInt(DoubleWord from, bool from_is_positive) noexcept
         : BigInt{}
     {
+        is_positive = from_is_positive;
         binary[0] = from & kMaxWord;
         if (from > kMaxWord) {
             ASSERT(words_capacity > 1, "Given integer won't fit in provided type");
@@ -358,15 +359,15 @@ namespace algo {
 
         auto rhs_data = std::ranges::cbegin(range);
         size_t rhs_wc = std::ranges::size(range);
-
         bool this_greater_equal = UCompare(range) >= 0;
         if (!this_greater_equal) {
             std::swap(lhs_data, rhs_data);
             std::swap(lhs_wc, rhs_wc);
         }
 
+        words_count = 1;
         size_t i = 0;
-        for (bool borrow = 0; borrow != 0 || i < rhs_wc; ++i) {
+        for (bool borrow = false; borrow || i < rhs_wc; ++i) {
             Word lhs {0}, rhs {0};
             if (i < lhs_wc) {
                 lhs = lhs_data[i];
@@ -393,8 +394,12 @@ namespace algo {
             }
         }
 
-        if (lhs_data[lhs_wc - 1] != 0) {
+        if (i < lhs_wc) {
             words_count = lhs_wc;
+        }
+
+        for (; i < words_count; ++i) {
+            binary[i] = lhs_data[i];
         }
 
         return !this_greater_equal;
@@ -484,8 +489,8 @@ namespace algo {
         UResetBinary(this_h.ToView());
         *this <<= mid_thr * kWordBSize;
         UAddRange(mix.ToView());
-        UnsignedSubSmallerRange(this_h.ToView());
-        UnsignedSubSmallerRange(this_l.ToView());
+        USubRange(this_h.ToView());
+        USubRange(this_l.ToView());
         *this <<= mid_thr * kWordBSize;
         UAddRange(this_l.ToView());
     }
@@ -525,13 +530,13 @@ namespace algo {
         } else {
             size_t max_size = words_count + range_words_count;
             // If result fits into smaller array, then perform multiplication using smaller array
-#define TRY_OPTIMIZE(cap) if (max_size < cap) { KaratsubaMultiplyByRange<cap>(range); return; }
+#define TRY_OPTIMIZE(cap) if (max_size < cap) { KaratsubaUMulByRange<cap>(range); return; }
             TRY_OPTIMIZE(words_capacity / 16 + 1)
             TRY_OPTIMIZE(words_capacity / 8 + 1)
             TRY_OPTIMIZE(words_capacity / 4 + 1)
             TRY_OPTIMIZE(words_capacity / 2 + 1)
 #undef TRY_OPTIMIZE
-            KaratsubaUMulByRange<words_capacity, Word, DoubleWord>(range);
+            KaratsubaUMulByRange<words_capacity>(range);
         }
     }
 
@@ -650,21 +655,6 @@ namespace algo {
         return *this;
     }
 
-    //template<size_t words_capacity, typename Word, typename DoubleWord>
-    //constexpr BigInt<words_capacity, Word, DoubleWord>& BigInt<words_capacity, Word, DoubleWord>::operator%=(const BigInt& rhs) noexcept {
-        //ASSERT(!rhs.IsZero());
-        //ASSERT(!rhs.IsOne() && rhs.is_positive);
-        //if (IsZero() || words_count < rhs.words_count) {
-            //return *this;
-        //} else if (rhs.IsPowerOf2()) {
-            //return *this &= rhs - 1;
-        //}
-
-        //BigInt remainder = UnsignedDivideByRange(rhs.cbegin(), rhs.cend());
-        //UnsignedResetBinary(remainder.cbegin(), remainder.cend());
-        //return *this;
-    //}
-
     template<size_t words_capacity, typename W, typename DW>
     constexpr BigInt<words_capacity, W, DW> BigInt<words_capacity, W, DW>::operator~() const noexcept {
         static_assert(words_capacity != -1ull, "Can't negate unbound BigInt");
@@ -767,6 +757,10 @@ namespace algo {
 
         while (!copy.IsZero()) {
             ret.push_back(alphabet.at(copy.UDivByWord(base)));
+        }
+
+        if (!is_positive) {
+            ret.push_back('-');
         }
         std::reverse(ret.begin(), ret.end());
         return ret;
