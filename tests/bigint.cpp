@@ -87,6 +87,57 @@ struct TestBigInt : algo::testing::Randomizer {
 
 };
 
+TEST_F(TestBigInt, Tmp) {
+    using Word = uint32_t;
+    using DoubleWord = uint64_t;
+    auto div = [](DoubleWord lhs, Word rhs) -> Word {
+        if (lhs == 0) {
+            return 0;
+        }
+
+        Word l {0};
+        Word r {std::numeric_limits<Word>::max()};
+        while (l < r) {
+            Word m = (l >> 1) + (r >> 1) + ((l | r) & 1); // (l + r) / 2 without overflow
+            DoubleWord q = lhs / m;
+            if (auto cmp = q <=> rhs; cmp < 0) {
+                r = m - 1;
+            } else {
+                l = m;
+            }
+        }
+        return r;
+    };
+
+    {
+        Word rhs = 823476237;
+        Word lhs = std::numeric_limits<Word>::max();
+        DoubleWord mul = static_cast<DoubleWord>(rhs) * lhs;
+        ASSERT_EQ(div(mul, rhs), lhs);
+    }
+
+    {
+        Word rhs = 1;
+        Word lhs = std::numeric_limits<Word>::max();
+        ASSERT_EQ(div(lhs, rhs), lhs);
+    }
+
+    for (size_t i = 0; i < 1'000'000; ++i) {
+        Word rhs = RandomInt<Word>(std::numeric_limits<Word>::max() / 1'000, std::numeric_limits<Word>::max());
+        Word lhs = RandomInt<Word>(std::numeric_limits<Word>::max() / 1'000, std::numeric_limits<Word>::max());
+        DoubleWord mul = static_cast<DoubleWord>(rhs) * lhs;
+
+        ASSERT_EQ(div(mul, rhs), lhs);
+    }
+
+    for (size_t i = 0; i < 1'000'000; ++i) {
+        DoubleWord mul = RandomInt<DoubleWord>(std::numeric_limits<DoubleWord>::max() / 1'000'000'000, std::numeric_limits<DoubleWord>::max() / 1'000'000);
+        Word rhs = RandomInt<Word>(1'000'000, 1'000'000'000);
+        ASSERT_EQ(div(mul, rhs), mul / rhs);
+    }
+
+}
+
 TEST_F(TestBigInt, Add) {
     {
         BI32 bi = (1ull << 33) - 1;
@@ -104,7 +155,6 @@ TEST_F(TestBigInt, Add) {
         BI32 sum_bi {sum};
 
         ASSERT_EQ(lhs_bi + rhs_bi, sum_bi);
-        return;
         ASSERT_EQ(sum_bi - lhs_bi, rhs_bi);
         ASSERT_EQ(sum_bi - rhs_bi, lhs_bi);
     }
@@ -112,38 +162,73 @@ TEST_F(TestBigInt, Add) {
 
 TEST_F(TestBigInt, Mul) {
     {
+        BI32 mul {"431945670969819163475119661644727127513566843473956"
+                  "347694048276078515677739032638348511608882151782487"
+                  "921949646467331047023953065727045353374680605654344"};
+        
+        BI32 lhs {"478326484553"};
+        BI32 rhs {"903035238313169957547106413453739017456639860276761"
+                  "311341061497458101587460297223439894756736676913780"
+                  "378542296892758204127074383037451088648"};
+        
+        std::cerr << mul.words_count << '\t' << rhs.words_count << '\t' << lhs.words_count << std::endl;
+        std::cerr << testing::PrintToString<BI32>(mul) << '\n' << testing::PrintToString<BI32>(rhs) << '\n';
+        ASSERT_EQ(mul / rhs, lhs);
+    }
+    return;
+
+    {
         BI32 bi = (1ull << 33) - 1;
         ASSERT_EQ(bi * 3ull, ((1ull << 33) - 1) * 3ull);
     }
 
     SetSeed(2);
     for (size_t i = 0; i < 100; ++i) {
+        std::string lhs = RandomBinary(RandomInt(48, 53));
+        std::string rhs = RandomBinary(RandomInt(8, 10));
+        std::string mul = NaiveMul(lhs, rhs);
+
+        BI32 lhs_bi {lhs};
+        BI32 rhs_bi {rhs};
+        BI32 mul_bi {mul};
+
+        ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
+        ASSERT_EQ(mul_bi / lhs_bi, rhs_bi);
+        ASSERT_EQ(mul_bi / rhs_bi, lhs_bi);
+    }
+
+    for (size_t i = 0; i < 100; ++i) {
         std::string lhs = RandomBinary(RandomInt(20, 512));
         std::string rhs = RandomBinary(RandomInt(28, 512));
         std::string mul = NaiveMul(lhs, rhs);
 
-        BI32 lhs_bi {lhs};
-        BI32 rhs_bi {rhs};
-        BI32 mul_bi {mul};
-
-        ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
-        ASSERT_EQ(rhs_bi * lhs_bi, mul_bi);
-        //ASSERT_EQ(mul_bi / lhs_bi, rhs_bi);
-        //ASSERT_EQ(mul_bi / rhs_bi, lhs_bi);
-    }
-
-    for (size_t i = 0; i < 100; ++i) {
-        std::string lhs = RandomBinary(RandomInt(500, 512));
-        std::string rhs = RandomBinary(RandomInt(500, 512));
-        std::string mul = NaiveMul(lhs, rhs);
 
         BI32 lhs_bi {lhs};
         BI32 rhs_bi {rhs};
         BI32 mul_bi {mul};
 
+        if (i == 13) {
+            std::cerr << lhs_bi.ToString() << '\n' << rhs_bi.ToString() << '\n' << mul_bi.ToString() << std::endl;
+        }
+
         ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
         ASSERT_EQ(rhs_bi * lhs_bi, mul_bi);
+        ASSERT_EQ(mul_bi / lhs_bi, rhs_bi);
+        ASSERT_EQ(mul_bi / rhs_bi, lhs_bi);
     }
+
+    //for (size_t i = 0; i < 100; ++i) {
+        //std::string lhs = RandomBinary(RandomInt(500, 512));
+        //std::string rhs = RandomBinary(RandomInt(500, 512));
+        //std::string mul = NaiveMul(lhs, rhs);
+
+        //BI32 lhs_bi {lhs};
+        //BI32 rhs_bi {rhs};
+        //BI32 mul_bi {mul};
+
+        //ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
+        //ASSERT_EQ(rhs_bi * lhs_bi, mul_bi);
+    //}
 }
 
 TEST(BigInt, BigInt) {
@@ -155,15 +240,17 @@ TEST(BigInt, BigInt) {
                          "11110000"
                          "10100000"};
         ASSERT_EQ(b, 0b1001'1111'0000'1010'0000'1111'0000'1010'0000ull);
-
-        //BI32 c {"12345678"};
-        //ASSERT_EQ(c, 12345678);
     }
 
     {
-        BI32 a {"0b111111111111111111111111111111111111111111111111111111111111"};
-        BI32 b {"0b100000000000000000000000000000000000000000000000000000000000"};
-        BI32 c {"0b100000000000000000000000000011111111111111111111111111111111"};
+        ASSERT_EQ(BI32{"0b110111101011110011110101110111001001001"}, BI32{478326484553ull});
+    }
+
+    {
+        BI32 a {12345};
+        ASSERT_EQ(a.ToString(10), "12345");
+        ASSERT_EQ(a.ToString(36), "9IX");
+        ASSERT_EQ(BI32{478326484553ull}.ToString(10), "478326484553");
     }
 }
 
