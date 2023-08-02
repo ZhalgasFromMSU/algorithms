@@ -210,8 +210,8 @@ namespace algo {
                 continue;
             }
 
-            *this *= base;
-            *this += c - '0';
+            UMulByShortRange(std::ranges::single_view(base));
+            UAddRange(std::ranges::single_view(static_cast<Word>(c - '0')));
         }
     }
 
@@ -387,13 +387,14 @@ namespace algo {
                 }
 
                 binary[i] = lhs - rhs;
+                if (binary[i] != 0) {
+                    words_count = i + 1;
+                }
             }
         }
 
         if (lhs_data[lhs_wc - 1] != 0) {
             words_count = lhs_wc;
-        } else {
-            words_count = i - 1;
         }
 
         return !this_greater_equal;
