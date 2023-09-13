@@ -1,14 +1,9 @@
 #include <iostream>
-#include <ranges>
-#include <array>
+#include <format>
+
 
 
 int main() {
-    size_t count = 0;
-    for (int i = 0; i < 1'000'000'0; ++i) {
-        std::array<size_t, 1'000'000> a {};
-        count += a[599'000];
-    }
-    std::cerr << count << std::endl;
+    std::cerr << std::format("1{}", 2) << std::endl;
     return 0;
 }

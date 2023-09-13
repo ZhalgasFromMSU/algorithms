@@ -24,6 +24,8 @@ enable_testing()
 add_executable(${PROJECT_NAME}
     bigint.cpp
     string.cpp
+    sync/wait_group.cpp
+    sync/queue.cpp
     # field.cpp
 )
 

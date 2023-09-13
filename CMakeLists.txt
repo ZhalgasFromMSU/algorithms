@@ -6,14 +6,19 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_library(${PROJECT_NAME} INTERFACE)
+add_library(${PROJECT_NAME})
 
 target_include_directories(${PROJECT_NAME}
-INTERFACE
+PUBLIC
     include
 )
 
-add_compile_options(-Werror -Wall -pedantic -g -O2)
+target_sources(${PROJECT_NAME}
+PUBLIC
+    src/sync/wait_group.cpp
+)
+
+add_compile_options(-Werror -Wall -pedantic -g)
 
 option(BUILD_TESTS "Build tests" OFF)
 
