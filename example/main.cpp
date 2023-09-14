@@ -1,9 +1,16 @@
 #include <iostream>
-#include <format>
+#include <concepts>
+#include <ranges>
 
 
+void foo(std::ranges::range auto range) {
+    for (auto i : range) {
+        std::cerr << i << std::endl;
+    }
+}
 
 int main() {
-    std::cerr << std::format("1{}", 2) << std::endl;
+    auto l = {1, 2, 3};
+    foo({1, 2, 3});
     return 0;
 }

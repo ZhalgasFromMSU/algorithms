@@ -9,7 +9,7 @@ namespace algo {
      */
     template<typename T, typename U>
     concept Range = std::ranges::range<T>
-                    && !std::is_rvalue_reference_v<T>
+                    // && !std::is_rvalue_reference_v<T>
                     && std::same_as<
                            std::iter_value_t<
                                decltype(
