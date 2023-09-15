@@ -3,44 +3,46 @@
 
 #include <gtest/gtest.h>
 
-template<size_t cap, typename Word, typename _, typename T>
-algo::BigInt<cap, Word, _> convert(T val) {
-    static_assert(std::numeric_limits<T>::digits
-                   >= std::numeric_limits<Word>::digits * cap);
+template<typename T>
+struct Converter {};
 
-    auto masked = [](T val, size_t part) {
-        size_t shift = part * 8;
-        T mask = std::numeric_limits<Word>::max();
-        return static_cast<Word>((val & (mask << shift)) >> shift);
-    };
+template<size_t capacity, typename Word, typename _>
+struct Converter<algo::BigInt<capacity, Word, _>> {
 
-    Word arr[] = {masked(val, std::make_integer_sequence<size_t, cap>{}...)};
-}
+    template<typename T>
+    algo::BigInt<capacity, Word, _> operator()(T val) {
+        static_assert(std::numeric_limits<T>::digits
+                       >= std::numeric_limits<Word>::digits * capacity);
+
+        auto masked = [](T val, size_t part) -> Word {
+            size_t shift = part * 8;
+            T mask = std::numeric_limits<Word>::max();
+            return static_cast<Word>((val & (mask << shift)) >> shift);
+        };
+
+        auto build = [&masked]<size_t... Indicies>(
+                T val,
+                std::integer_sequence<size_t, Indicies...> seq)
+        {
+            Word arr[] = {masked(val, Indicies)...};
+            return algo::BigInt<capacity, Word, _>{arr};
+        };
+
+        return build(val, std::make_integer_sequence<size_t, capacity>{});
+    }
+
+};
 
 TEST(BigInt, Shift) {
     using Int = algo::BigInt<3, uint8_t, uint16_t>;
-
-    auto convert = [](uint32_t n) -> Int {
-        auto masked = [](uint32_t n, int part) -> uint8_t {
-            uint32_t shift = part * 8;
-            return static_cast<uint8_t>((n & (0b1111'1111 << shift)) >> shift);
-        };
-
-        uint8_t arr[] = {masked(n, 0), masked(n, 1), masked(n, 2)};
-        return Int{arr};
-    };
+    Converter<Int> convert;
 
     uint32_t cap = std::numeric_limits<uint16_t>::max();
-
     for (uint32_t n = 0; n < cap; ++n) {
         for (size_t shift = 0; shift < 24; ++shift) {
             ASSERT_EQ(convert(n) << shift, convert(n << shift))
                     << n << '\t' << shift;
-        }
-    }
 
-    for (uint32_t n = 0; n < cap; ++n) {
-        for (size_t shift = 0; shift < 24; ++shift) {
             uint32_t nn = n << 8;
             ASSERT_EQ(convert(nn) >> shift, convert(nn >> shift))
                     << n << '\t' << shift;
@@ -49,23 +51,42 @@ TEST(BigInt, Shift) {
 }
 
 TEST(BigInt, Add) {
-
+    using Int = algo::BigInt<2, uint8_t, uint16_t>;
+    uint16_t max = 0b1111'11111111;
+    for (uint16_t i = 0; i < max; ++i) {
+        for (uint16_t j = 0; j < max; j += 10) {
+            ASSERT_EQ(Int{i} + Int{j}, Int{static_cast<uint16_t>(i + j)});
+        }
+    }
 }
 
+TEST(BigInt, Sub) {
+    using Int = algo::BigInt<2, uint8_t, uint16_t>;
+    uint16_t max = 0b1111'11111111;
+    for (uint16_t i = 0; i < max; ++i) {
+        for (uint16_t j = 0; j < i; j += 10) {
+            ASSERT_EQ(Int{i} - Int{j},
+                      Int{static_cast<uint16_t>(i - j)});
 
-//using BI32 = algo::BigInt<32>;
+            ASSERT_EQ(Int{j} - Int{i},
+                      Int(static_cast<uint16_t>(i - j), false));
+        }
+    }
+}
 
-//namespace testing {
-    //template<>
-    //std::string PrintToString<BI32>(const BI32& bi) {
-        //std::stringstream ss;
-        //ss << bi.words_count << ' ' << (bi.is_positive ? '+' : '-');
-        //for (size_t i = 0; i < bi.words_count; ++i) {
-            //ss << ' ' << bi.binary[bi.words_count - 1 - i];
-        //}
-        //return std::move(ss).str();
-    //}
-//}
+TEST(BigInt, Mul) {
+    using Int = algo::BigInt<4, uint8_t, uint16_t>;
+    [[maybe_unused]] Converter<Int> convert;
+    uint16_t max = std::numeric_limits<uint16_t>::max();
+    for (uint16_t i = 0; i < max; ++i) {
+        for (uint16_t j = 0; j < max; ++j) {
+            uint32_t mul = i;
+            mul *= j;
+
+            ASSERT_EQ(Int{i} * Int{j}, convert(mul));
+        }
+    }
+}
 
 //struct TestBigInt : algo::testing::Randomizer {
 
@@ -132,30 +153,6 @@ TEST(BigInt, Add) {
     //}
 
 //};
-
-//TEST_F(TestBigInt, Add) {
-    //{
-        //BI32 bi = (1ull << 33) - 1;
-        //ASSERT_EQ(bi - BI32(1ull << 32), (1ull << 32) - 1);
-    //}
-
-    //SetSeed(1);
-    //for (size_t i = 0; i < 10000; ++i) {
-        //std::string lhs = RandomBinary(RandomInt(12, 1023));
-        //std::string rhs = RandomBinary(RandomInt(12, 1023));
-        //std::string sum = NaiveAdd(lhs, rhs);
-
-        //BI32 lhs_bi {lhs};
-        //BI32 rhs_bi {rhs};
-        //BI32 sum_bi {sum};
-
-        //ASSERT_EQ(lhs_bi + rhs_bi, sum_bi);
-        //ASSERT_EQ(sum_bi - lhs_bi, rhs_bi);
-        //ASSERT_EQ(sum_bi - rhs_bi, lhs_bi);
-        //ASSERT_EQ(lhs_bi - sum_bi, -rhs_bi);
-        //ASSERT_EQ(rhs_bi - sum_bi, -lhs_bi);
-    //}
-//}
 
 //TEST_F(TestBigInt, Mul) {
     //{

@@ -16,7 +16,9 @@ namespace algo {
     class BigInt {
         static_assert(words_capacity > 0
                           && !std::numeric_limits<Word>::is_signed
-                          && std::numeric_limits<Word>::is_modulo);
+                          && std::numeric_limits<Word>::is_modulo
+                          && !std::numeric_limits<DoubleWord>::is_signed
+                          && std::numeric_limits<DoubleWord>::is_modulo);
 
         static_assert(sizeof(DoubleWord) >= sizeof(Word) * 2,
                       "DoubleWord should be able to hold "
@@ -424,26 +426,25 @@ namespace algo {
     constexpr bool BigInt<cap, W, DW>::USubRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
-        auto lhs_data = std::ranges::cbegin(binary);
-        size_t lhs_wc = words_count;
+        auto range_data = std::ranges::begin(range);
+        size_t range_wc = std::ranges::size(range);
 
-        auto rhs_data = std::ranges::cbegin(range);
-        size_t rhs_wc = std::ranges::size(range);
-        bool this_greater_equal = UCompare(range) >= 0;
-        if (!this_greater_equal) {
-            std::swap(lhs_data, rhs_data);
-            std::swap(lhs_wc, rhs_wc);
-        }
-
-        words_count = 1;
+        const bool this_ge = UCompare(range) >= 0;
+    
         size_t i = 0;
-        for (bool borrow = false; borrow || i < rhs_wc; ++i) {
+        size_t small_iters = std::min(range_wc, words_count);
+        size_t big_iters = std::max(range_wc, words_count);
+        size_t new_wc = 1;
+        for (bool borrow = false; borrow || i < small_iters; ++i) {
             W lhs {0}, rhs {0};
-            if (i < lhs_wc) {
-                lhs = lhs_data[i];
+            if (i < words_count) {
+                lhs = binary[i];
             }
-            if (i < rhs_wc) {
-                rhs = rhs_data[i];
+            if (i < range_wc) {
+                rhs = range_data[i];
+            }
+            if (!this_ge) {
+                std::swap(lhs, rhs);
             }
 
             if (rhs != kMaxWord || !borrow) {
@@ -459,20 +460,24 @@ namespace algo {
 
                 binary[i] = lhs - rhs;
                 if (binary[i] != 0) {
-                    words_count = i + 1;
+                    new_wc = i + 1;
                 }
             }
         }
 
-        if (i < lhs_wc) {
-            words_count = lhs_wc;
+        if (i < big_iters) {
+            words_count = big_iters;
+        } else {
+            words_count = new_wc;
         }
 
-        for (; i < words_count; ++i) {
-            binary[i] = lhs_data[i];
+        if (!this_ge) {
+            for (; i < words_count; ++i) {
+                binary[i] = range_data[i];
+            }
         }
 
-        return !this_greater_equal;
+        return !this_ge;
     }
 
     template<size_t cap, typename W, typename DW>
@@ -503,20 +508,20 @@ namespace algo {
     constexpr void BigInt<cap, W, DW>::UMulByShortRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
-        size_t range_words_count = std::ranges::size(range);
+        size_t range_wc = std::ranges::size(range);
 
-        ASSERT(words_count == 1 || range_words_count == 1,
+        ASSERT(words_count == 1 || range_wc == 1,
                "Short multiplication not applicable");
 
         auto range_data = std::ranges::begin(range);
         size_t i = 0;
         W lhs {binary[0]}, rhs {range_data[0]};
         binary[0] = 0;
-        for (; i < words_count || i < range_words_count; ++i) {
+        for (; i < words_count || i < range_wc; ++i) {
             DW prod = static_cast<DW>(lhs) * rhs;
             if (i + 1 < words_count) {
                 lhs = binary[i + 1];
-            } else if (i + 1 < range_words_count) {
+            } else if (i + 1 < range_wc) {
                 rhs = range_data[i + 1];
             }
 
@@ -585,8 +590,8 @@ namespace algo {
     constexpr void BigInt<cap, W, DW>::UMulByRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
-        size_t range_words_count = std::ranges::size(range);
-        if (words_count == 1 || range_words_count == 1) {
+        size_t range_wc = std::ranges::size(range);
+        if (words_count == 1 || range_wc == 1) {
             // Case when multiplication can be done linearly,
             // without extra stack allocation for temporary result
             UMulByShortRange(range);
@@ -594,7 +599,7 @@ namespace algo {
             // for small numbers do quadratic multiplication
             BigInt ret;
             auto it = std::ranges::begin(range);
-            for (size_t i = 0; i < range_words_count; ++i, ++it) {
+            for (size_t i = 0; i < range_wc; ++i, ++it) {
                 // Try to perform multiplication on smaller type
                 // because we don't need to allocate whole array
 #define TRY_OPTIMIZE(cap) if (words_count + i + 1 < cap) { \
@@ -618,7 +623,7 @@ namespace algo {
             }
             UResetBinary(ret.ToView());
         } else {
-            size_t max_size = words_count + range_words_count;
+            size_t max_size = words_count + range_wc;
             // If result fits into smaller array, then perform
             // multiplication using smaller array
 #define TRY_OPTIMIZE(cap) if (max_size < cap) { \
@@ -638,11 +643,12 @@ namespace algo {
     constexpr BigInt<cap, W, DW>& BigInt<cap, W, DW>::operator*=(
             const BigInt& rhs) noexcept
     {
+        is_positive ^= !rhs.is_positive;
+
         if (rhs.IsPowerOf2()) {
             return *this <<= rhs.BitWidth() - 1;
         }
 
-        is_positive ^= !rhs.is_positive;
         UMulByRange(rhs.ToView());
         return *this;
     }

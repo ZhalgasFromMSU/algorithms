@@ -2,15 +2,8 @@
 #include <concepts>
 #include <ranges>
 
-
-void foo(std::ranges::range auto range) {
-    for (auto i : range) {
-        std::cerr << i << std::endl;
-    }
-}
-
 int main() {
-    auto l = {1, 2, 3};
-    foo({1, 2, 3});
+    uint16_t i {65535}, j {65535};
+    std::cerr << i + j << std::endl;
     return 0;
 }
