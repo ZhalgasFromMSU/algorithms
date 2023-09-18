@@ -243,6 +243,7 @@ namespace algo {
         : words_count{1}
         , is_positive{is_positive}
     {
+        binary[0] = 0;
         size_t counter = 1;
         for (auto it = std::ranges::begin(range);
              it != std::ranges::end(range);
@@ -508,6 +509,14 @@ namespace algo {
     constexpr void BigInt<cap, W, DW>::UMulByShortRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
+        if (IsZero()) {
+            return;
+        } else if (RangeIsZero(range)) {
+            words_count = 1;
+            binary[0] = 0;
+            return;
+        }
+
         size_t range_wc = std::ranges::size(range);
 
         ASSERT(words_count == 1 || range_wc == 1,
@@ -555,7 +564,7 @@ namespace algo {
             const RandomAccessRange<W> auto& range) noexcept
     {
         // Multiplication result can fit into SmallInt
-        using SmallInt = BigInt<subint_cap>;
+        using SmallInt = BigInt<subint_cap, W, DW>;
 
         const size_t mid_thr = (
                 std::max(std::ranges::size(range), words_count) + 1
@@ -592,49 +601,33 @@ namespace algo {
     {
         size_t range_wc = std::ranges::size(range);
         if (words_count == 1 || range_wc == 1) {
-            // Case when multiplication can be done linearly,
-            // without extra stack allocation for temporary result
             UMulByShortRange(range);
-        } else if constexpr (cap <= 40) {
-            // for small numbers do quadratic multiplication
+        } else if constexpr (cap < 40) {
             BigInt ret;
             auto it = std::ranges::begin(range);
             for (size_t i = 0; i < range_wc; ++i, ++it) {
-                // Try to perform multiplication on smaller type
-                // because we don't need to allocate whole array
-#define TRY_OPTIMIZE(cap) if (words_count + i + 1 < cap) { \
-                           BigInt<cap> tmp {ToView()}; \
-                           tmp.UMulByShortRange(std::ranges::single_view(*it));\
-                           tmp <<= i * kWordBSize; \
-                           ret.UAddRange(tmp.ToView()); \
-                          }
-
-                TRY_OPTIMIZE(cap / 16 + 1)
-                else TRY_OPTIMIZE(cap / 8 + 1)
-                else TRY_OPTIMIZE(cap / 4 + 1)
-                else TRY_OPTIMIZE(cap / 2 + 1)
-                else {
-                    BigInt tmp {*this};
-                    tmp.UMulByShortRange(std::ranges::single_view(*it));
-                    tmp <<= i * kWordBSize;
-                    ret.UAddRange(tmp.ToView());
+                if (*it == 0) {
+                    continue;
                 }
-#undef TRY_OPTIMIZE
+                BigInt tmp {std::ranges::single_view(*it)};
+                tmp.UMulByShortRange(ToView());
+                tmp <<= i * kWordBSize;
+                ret.UAddRange(tmp.ToView());
             }
             UResetBinary(ret.ToView());
         } else {
             size_t max_size = words_count + range_wc;
-            // If result fits into smaller array, then perform
-            // multiplication using smaller array
-#define TRY_OPTIMIZE(cap) if (max_size < cap) { \
-                           KaratsubaUMulByRange<cap>(range); \
-                           return; \
-                          }
-            TRY_OPTIMIZE(cap / 16 + 1)
-            TRY_OPTIMIZE(cap / 8 + 1)
-            TRY_OPTIMIZE(cap / 4 + 1)
-            TRY_OPTIMIZE(cap / 2 + 1)
-#undef TRY_OPTIMIZE
+            #define TRY_OPTIMIZE(small_cap) \
+            if (max_size <= small_cap) { \
+                KaratsubaUMulByRange<small_cap>(range); \
+                return; \
+            }
+
+            TRY_OPTIMIZE(cap / 16 + 1);
+            TRY_OPTIMIZE(cap / 8 + 1);
+            TRY_OPTIMIZE(cap / 4 + 1);
+            TRY_OPTIMIZE(cap / 2 + 1);
+            #undef TRY_OPTIMIZE
             KaratsubaUMulByRange<cap>(range);
         }
     }
@@ -646,10 +639,11 @@ namespace algo {
         is_positive ^= !rhs.is_positive;
 
         if (rhs.IsPowerOf2()) {
-            return *this <<= rhs.BitWidth() - 1;
+            *this <<= rhs.BitWidth() - 1;
+        } else {
+            UMulByRange(rhs.ToView());
         }
 
-        UMulByRange(rhs.ToView());
         return *this;
     }
 

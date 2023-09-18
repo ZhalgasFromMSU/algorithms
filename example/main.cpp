@@ -1,9 +1,14 @@
 #include <iostream>
-#include <concepts>
 #include <ranges>
 
+template<typename T>
+void foo(T a) {
+    static_assert(std::is_same_v<T, uint32_t>);
+}
+
 int main() {
-    uint16_t i {65535}, j {65535};
-    std::cerr << i + j << std::endl;
+    uint8_t i = 0;
+    uint8_t j = 1;
+    foo(i * j);
     return 0;
 }

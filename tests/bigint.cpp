@@ -11,6 +11,7 @@ struct Converter<algo::BigInt<capacity, Word, _>> {
 
     template<typename T>
     algo::BigInt<capacity, Word, _> operator()(T val) {
+        static_assert(!std::numeric_limits<T>::is_signed);
         static_assert(std::numeric_limits<T>::digits
                        >= std::numeric_limits<Word>::digits * capacity);
 
@@ -33,7 +34,73 @@ struct Converter<algo::BigInt<capacity, Word, _>> {
 
 };
 
-TEST(BigInt, Shift) {
+struct BigInt : algo::testing::Randomizer {
+
+    std::string RandomBinary(size_t size) {
+        return "0b1" + RandomString(size - 1, "01");
+    }
+
+    static std::string NaiveAdd(std::string_view lhs, std::string_view rhs) {
+        if (lhs.starts_with("0b")) {
+            lhs.remove_prefix(2);
+        }
+        if (rhs.starts_with("0b")) {
+            rhs.remove_prefix(2);
+        }
+
+        bool overflow = false;
+        std::string ret;
+        ret.reserve(std::max(lhs.size(), rhs.size()) + 1);
+
+        auto lhs_it {lhs.rbegin()}, rhs_it {rhs.rbegin()};
+
+        while (lhs_it != lhs.rend() || rhs_it != rhs.rend()) {
+            bool lhs_bit = lhs_it != lhs.rend() ? *lhs_it == '1' : false;
+            bool rhs_bit = rhs_it != rhs.rend() ? *rhs_it == '1' : false;
+
+            if (rhs_bit && overflow) {
+                ret.push_back(lhs_bit ? '1' : '0');
+            } else if (lhs_bit && (rhs_bit || overflow)) {
+                ret.push_back('0');
+                overflow = true;
+            } else {
+                ret.push_back(lhs_bit || rhs_bit || overflow ? '1' : '0');
+                overflow = false;
+            }
+
+            if (lhs_it != lhs.rend()) {
+                ++lhs_it;
+            }
+            if (rhs_it != rhs.rend()) {
+                ++rhs_it;
+            }
+        }
+
+        if (overflow) {
+            ret.push_back('1');
+        }
+        ret.push_back('b');
+        ret.push_back('0');
+
+        std::reverse(ret.begin(), ret.end());
+        return ret;
+    }
+
+    static std::string NaiveMul(std::string_view lhs, std::string_view rhs) {
+        std::string ret {"0b0"};
+        for (size_t j = 0; j < rhs.size(); ++j) {
+            if (rhs[rhs.size() - j - 1] == '1') {
+                std::string tmp {lhs};
+                tmp.resize(tmp.size() + j, '0');
+                ret = NaiveAdd(ret, tmp);
+            }
+        }
+        return ret;
+    }
+
+};
+
+TEST_F(BigInt, Shift) {
     using Int = algo::BigInt<3, uint8_t, uint16_t>;
     Converter<Int> convert;
 
@@ -50,7 +117,7 @@ TEST(BigInt, Shift) {
     }
 }
 
-TEST(BigInt, Add) {
+TEST_F(BigInt, Add) {
     using Int = algo::BigInt<2, uint8_t, uint16_t>;
     uint16_t max = 0b1111'11111111;
     for (uint16_t i = 0; i < max; ++i) {
@@ -60,7 +127,7 @@ TEST(BigInt, Add) {
     }
 }
 
-TEST(BigInt, Sub) {
+TEST_F(BigInt, Sub) {
     using Int = algo::BigInt<2, uint8_t, uint16_t>;
     uint16_t max = 0b1111'11111111;
     for (uint16_t i = 0; i < max; ++i) {
@@ -74,85 +141,70 @@ TEST(BigInt, Sub) {
     }
 }
 
-TEST(BigInt, Mul) {
+TEST_F(BigInt, MulShort) {
     using Int = algo::BigInt<4, uint8_t, uint16_t>;
-    [[maybe_unused]] Converter<Int> convert;
-    uint16_t max = std::numeric_limits<uint16_t>::max();
-    for (uint16_t i = 0; i < max; ++i) {
-        for (uint16_t j = 0; j < max; ++j) {
+    Converter<Int> convert;
+
+    for (uint16_t i = 0b1'00000000; i <= 0b1111'11111111; ++i) {
+        for (uint16_t j = 0; j < std::numeric_limits<uint8_t>::max(); ++j) {
             uint32_t mul = i;
             mul *= j;
 
             ASSERT_EQ(Int{i} * Int{j}, convert(mul));
+            ASSERT_EQ(Int{j} * Int{i}, convert(mul));
         }
     }
 }
 
-//struct TestBigInt : algo::testing::Randomizer {
+TEST_F(BigInt, Mul) {
+    using Int = algo::BigInt<4, uint8_t, uint16_t>;
+    Converter<Int> convert;
 
-    //std::string RandomBinary(size_t size) {
-        //return "0b1" + RandomString(size - 1, "01");
-    //}
+    for (uint16_t i = 0b1'00000000; i <= 0b1111'11111111; ++i) {
+        for (uint16_t j = 0b1'00000000; j <= 0b1111'11111111; j += 10) {
+            uint32_t mul = i;
+            mul *= j;
 
-    //static std::string NaiveAdd(std::string_view lhs, std::string_view rhs) {
-        //if (lhs.starts_with("0b")) {
-            //lhs.remove_prefix(2);
-        //}
-        //if (rhs.starts_with("0b")) {
-            //rhs.remove_prefix(2);
-        //}
+            ASSERT_EQ(Int{i} * Int{j}, convert(mul)) << i << '\t' << j;
+        }
+    }
+}
 
-        //bool overflow = false;
-        //std::string ret;
-        //ret.reserve(std::max(lhs.size(), rhs.size()) + 1);
+TEST_F(BigInt, MulKaratsuba) {
+    using Int = algo::BigInt<100, uint8_t, uint16_t>;
+    SetSeed(1);
 
-        //auto lhs_it {lhs.rbegin()}, rhs_it {rhs.rbegin()};
+    for (size_t i = 0; i < 100; ++i) {
+        std::string lhs = RandomBinary(RandomInt<size_t>(320, 400));
+        std::string rhs = RandomBinary(RandomInt<size_t>(320, 400));
+        ASSERT_EQ(Int{lhs} * Int{rhs}, Int{NaiveMul(lhs, rhs)})
+            << i << '\n' << lhs << '\n' << rhs;
+    }
+}
 
-        //while (lhs_it != lhs.rend() || rhs_it != rhs.rend()) {
-            //bool lhs_bit = lhs_it != lhs.rend() ? *lhs_it == '1' : false;
-            //bool rhs_bit = rhs_it != rhs.rend() ? *rhs_it == '1' : false;
+TEST_F(BigInt, Tmp) {
+    using Int = algo::BigInt<100, uint8_t, uint16_t>;
+    auto lhs = "0b10010101001000100101101100010101110001110110111100100001001011110100000110110111101101100111001010111001001011100000001001110111001101001110001011011110001111111100011100111001111010100000111110001000000111001110100101011000111100010101101000010101010100100011111001101010100011011000100100011110010111000001000001110101100110011101111000000110011100000101010100";
 
-            //if (rhs_bit && overflow) {
-                //ret.push_back(lhs_bit ? '1' : '0');
-            //} else if (lhs_bit && (rhs_bit || overflow)) {
-                //ret.push_back('0');
-                //overflow = true;
-            //} else {
-                //ret.push_back(lhs_bit || rhs_bit || overflow ? '1' : '0');
-                //overflow = false;
-            //}
+    auto rhs = "0b11010100101001000111100000101110110111010110100001100010110010001011000110101100001110000000011100101010100010111110000000010010100010101111110000111100100010000111101111100101011100011010001000010101010010000101110001100000100001100001110101110101000101110110101101111101111001001010111111001111011111001001110101000110100001100010010100110001000101001101111100010010100110101";
 
-            //if (lhs_it != lhs.rend()) {
-                //++lhs_it;
-            //}
-            //if (rhs_it != rhs.rend()) {
-                //++rhs_it;
-            //}
-        //}
+    Int l {lhs}, r {rhs};
+    Int expected = Int{NaiveMul(lhs, rhs)};
+    Int actual = l * r;
 
-        //if (overflow) {
-            //ret.push_back('1');
-        //}
-        //ret.push_back('b');
-        //ret.push_back('0');
+    ASSERT_EQ(actual.words_count, expected.words_count);
+    for (size_t i = 0; i < actual.words_count; ++i) {
+        std::cerr << static_cast<int>(actual.binary[i])
+                 << '\t' << static_cast<int>(expected.binary[i]);
 
-        //std::reverse(ret.begin(), ret.end());
-        //return ret;
-    //}
+        if (actual.binary[i] != expected.binary[i]) {
+            std::cerr << "\t<-----------------" << std::endl;
+        } else {
+            std::cerr << std::endl;
+        }
+    }
+}
 
-    //static std::string NaiveMul(std::string_view lhs, std::string_view rhs) {
-        //std::string ret {"0b0"};
-        //for (size_t j = 0; j < rhs.size(); ++j) {
-            //if (rhs[rhs.size() - j - 1] == '1') {
-                //std::string tmp {lhs};
-                //tmp.resize(tmp.size() + j, '0');
-                //ret = NaiveAdd(ret, tmp);
-            //}
-        //}
-        //return ret;
-    //}
-
-//};
 
 //TEST_F(TestBigInt, Mul) {
     //{
@@ -221,7 +273,7 @@ TEST(BigInt, Mul) {
     //}
 //}
 
-//TEST(BigInt, BigInt) {
+//TEST_F(BigInt, BigInt) {
     //{
         //BI32 a {"0b11101100"};
         //ASSERT_EQ(a, 0b11101100);
