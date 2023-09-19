@@ -18,6 +18,14 @@ namespace algo::testing {
             return std::uniform_int_distribution<T>{min, max}(gen_);
         }
 
+        template<std::integral T>
+        T RandomInt() {
+            return std::uniform_int_distribution<T>{
+                std::numeric_limits<T>::min(),
+                std::numeric_limits<T>::max(),
+            }(gen_);
+        }
+
         std::string RandomString(size_t size, std::string_view chars = "") {
             if (chars.empty()) {
                 chars = "abcdefghijklmnopqrstuvwxyz"

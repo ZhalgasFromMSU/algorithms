@@ -73,6 +73,26 @@ namespace algo {
         constexpr std::string ToString(Word base = 10) const noexcept;
         constexpr auto ToView() const noexcept;
 
+        friend std::ostream& operator<< (std::ostream& os, const BigInt& bi) {
+            os << bi.words_count << ' ';
+            if (bi.is_positive) {
+                os << "+ ";
+            } else {
+                os << "- ";
+            }
+
+            os << bi.ToString();
+
+            //std::string sep = "";
+            //for (Word w : std::ranges::reverse_view(bi.ToView())) {
+                //os << sep << +w;
+                //if (sep.empty()) {
+                    //sep = " ";
+                //}
+            //}
+            return os;
+        }
+
         std::conditional_t<
             kInfInt, // TODO add support for vector
             std::vector<Word>,
@@ -130,6 +150,17 @@ namespace algo {
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
     };
 
+    // Literals
+    namespace literals {
+
+        constexpr BigInt<100, uint8_t, uint16_t>
+            operator ""_bi(const char* str, size_t len) noexcept
+        {
+            return BigInt<100, uint8_t, uint16_t> {std::string_view{str, len}};
+        }
+
+    } // namespace literals
+
     // Traits
     using VecBigInt = BigInt<-1ull>;
 
@@ -138,6 +169,8 @@ namespace algo {
 
     template<size_t S, typename Word, typename DoubleWord>
     struct IsBigInt<BigInt<S, Word, DoubleWord>> : std::true_type {};
+
+    // Ostream
 
     // Implementation
     template<size_t cap, typename W, typename DW>
@@ -602,7 +635,7 @@ namespace algo {
         size_t range_wc = std::ranges::size(range);
         if (words_count == 1 || range_wc == 1) {
             UMulByShortRange(range);
-        } else if constexpr (cap < 40) {
+        } else if constexpr (cap < 400) {
             BigInt ret;
             auto it = std::ranges::begin(range);
             for (size_t i = 0; i < range_wc; ++i, ++it) {

@@ -3,6 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <bitset>
+
 template<typename T>
 struct Converter {};
 
@@ -98,6 +101,39 @@ struct BigInt : algo::testing::Randomizer {
         return ret;
     }
 
+    template<typename T, typename... Operands>
+    static std::string Format(bool as_words,
+                              const T& actual,
+                              const T& expected,
+                              Operands&&... ops)
+    {
+        std::string delim = "\n----------------------------\n";
+        std::stringstream ss;
+        ss << delim;
+        if (as_words) {
+            ss << "Actual: " << actual << delim;
+            ss << "Expected: " << expected << delim;
+        } else {
+            ss << "Actual: " << actual.ToString() << delim;
+            ss << "Expected: " << expected.ToString() << delim;
+        }
+
+        auto print_operands = [&]<size_t... Indicies>(
+                std::integer_sequence<size_t, Indicies...>)
+        {
+            if (as_words) {
+                ((ss << "Operand " << Indicies + 1 << ": "
+                     << ops << delim), ...);
+            } else {
+                ((ss << "Operand " << Indicies + 1 << ": "
+                     << ops.ToString() << delim), ...);
+            }
+        };
+
+        print_operands(std::make_integer_sequence<size_t, sizeof...(ops)>{});
+        return std::move(ss).str();
+    }
+
 };
 
 TEST_F(BigInt, Shift) {
@@ -165,7 +201,10 @@ TEST_F(BigInt, Mul) {
             uint32_t mul = i;
             mul *= j;
 
-            ASSERT_EQ(Int{i} * Int{j}, convert(mul)) << i << '\t' << j;
+            Int lhs {i};
+            Int rhs {j};
+            ASSERT_EQ(lhs * rhs, convert(mul));
+            ASSERT_EQ(lhs * rhs, rhs * lhs);
         }
     }
 }
@@ -175,35 +214,66 @@ TEST_F(BigInt, MulKaratsuba) {
     SetSeed(1);
 
     for (size_t i = 0; i < 100; ++i) {
-        std::string lhs = RandomBinary(RandomInt<size_t>(320, 400));
-        std::string rhs = RandomBinary(RandomInt<size_t>(320, 400));
-        ASSERT_EQ(Int{lhs} * Int{rhs}, Int{NaiveMul(lhs, rhs)})
-            << i << '\n' << lhs << '\n' << rhs;
+        std::string lhs_str = RandomBinary(RandomInt<size_t>(320, 400));
+        std::string rhs_str = RandomBinary(RandomInt<size_t>(320, 400));
+        std::string mul_str = NaiveMul(lhs_str, rhs_str);
+
+        {
+            Int lhs {lhs_str};
+            Int rhs {rhs_str};
+            ASSERT_EQ(lhs * rhs, Int{mul_str})
+                << lhs.ToString() << '\n' << rhs.ToString();
+        }
+    }
+}
+
+TEST_F(BigInt, Serialize) {
+    using Int = algo::BigInt<8, uint8_t, uint16_t>;
+    SetSeed(1);
+    for (size_t i = 0; i < 100; ++i) {
+        std::string str = RandomBinary(RandomInt<size_t>(50, 64));
+        ASSERT_EQ(Int{str}.ToString(2), str.substr(2));
+    }
+
+    for (size_t i = 0; i < 100; ++i) {
+        std::string str = RandomString(1, "123456789")
+                        + RandomString(RandomInt<size_t>(14, 17), "0123456789");
+        ASSERT_EQ(Int{str}.ToString(), str);
     }
 }
 
 TEST_F(BigInt, Tmp) {
     using Int = algo::BigInt<100, uint8_t, uint16_t>;
-    auto lhs = "0b10010101001000100101101100010101110001110110111100100001001011110100000110110111101101100111001010111001001011100000001001110111001101001110001011011110001111111100011100111001111010100000111110001000000111001110100101011000111100010101101000010101010100100011111001101010100011011000100100011110010111000001000001110101100110011101111000000110011100000101010100";
+    std::string lhs = "62902805278564175885450201171482551592362697531405419301362439180089461679894169277912768041299508395833040290";
+    std::string rhs = "1124654617929823523508418266605769438880489315693959666619759738912975269702691131329786004609322592816605481539";
+    std::string mul = "70743930437277679583050105498855453208622151128881564088493104886725311177418596746691228539997892898307455561897755738878238501464820919615400067064898595858377940593250734611037776627002322512144977288531782020124480870";
+    std::string true_mul = "70743930437277679583050105498855453208622151128881564088493104886725311177418596746691228539997892420591228115819666652533191680907624168619828393658548722186396980573440661495416770142611965686646161646444967061838206310";
 
-    auto rhs = "0b11010100101001000111100000101110110111010110100001100010110010001011000110101100001110000000011100101010100010111110000000010010100010101111110000111100100010000111101111100101011100011010001000010101010010000101110001100000100001100001110101110101000101110110101101111101111001001010111111001111011111001001110101000110100001100010010100110001000101001101111100010010100110101";
-
-    Int l {lhs}, r {rhs};
-    Int expected = Int{NaiveMul(lhs, rhs)};
-    Int actual = l * r;
-
-    ASSERT_EQ(actual.words_count, expected.words_count);
-    for (size_t i = 0; i < actual.words_count; ++i) {
-        std::cerr << static_cast<int>(actual.binary[i])
-                 << '\t' << static_cast<int>(expected.binary[i]);
-
-        if (actual.binary[i] != expected.binary[i]) {
-            std::cerr << "\t<-----------------" << std::endl;
-        } else {
-            std::cerr << std::endl;
-        }
-    }
+    // ASSERT_EQ(Int{lhs} * Int{rhs}, Int{mul});
+    Int llhs {lhs};
+    Int rrhs {rhs};
+    ASSERT_EQ(llhs * rrhs, rrhs * llhs);
+    ASSERT_EQ(llhs * rrhs, Int{true_mul}) << llhs << '\n' << rrhs;
 }
+
+//TEST_F(BigInt, Tmp) {
+    //using namespace algo::literals;
+    //using Int = algo::BigInt<100, uint8_t, uint16_t>;
+
+    //std::fstream f {"test_data.txt"};
+    //std::string lhs_str, rhs_str;
+
+    //f >> lhs_str;
+    //f >> rhs_str;
+
+    //std::string mul = "70743930437277679583050105498855453208622151128881564088493104886725311177418596746691228539997892813093209585029772280232905825365429066735108903700522672446619174751879208055278353848705664267596539903727106919457199462";
+
+    //{
+        //Int lhs {lhs_str};
+        //Int rhs {rhs_str};
+        //ASSERT_EQ(lhs * rhs, Int{mul});
+    //}
+//}
 
 
 //TEST_F(TestBigInt, Mul) {

@@ -6,8 +6,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_compile_options(-g -Wall -Werror -pedantic -fsanitize=address)
-add_link_options(-fsanitize=address)
+add_compile_options(
+    -g -Wall -Werror -pedantic -fsanitize=address -fsanitize=undefined)
+add_link_options(-fsanitize=address -fsanitize=undefined)
 
 include(FetchContent)
 FetchContent_Declare(
