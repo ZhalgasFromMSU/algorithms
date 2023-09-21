@@ -101,6 +101,19 @@ struct BigInt : algo::testing::Randomizer {
         return ret;
     }
 
+    static std::string Words(const auto& bi) {
+        std::stringstream ss;
+        ss << bi.words_count << ' '
+           << (bi.is_positive ? '+' : '-');
+
+        for (auto v : std::ranges::reverse_view(bi.ToView())) {
+            static_assert(std::numeric_limits<decltype(v)>::digits <= 32);
+            ss << ' ' << static_cast<uint32_t>(v);
+        }
+
+        return std::move(ss).str();
+    }
+
     template<typename T, typename... Operands>
     static std::string Format(bool as_words,
                               const T& actual,
@@ -154,25 +167,44 @@ TEST_F(BigInt, Shift) {
 }
 
 TEST_F(BigInt, Add) {
-    using Int = algo::BigInt<2, uint8_t, uint16_t>;
-    uint16_t max = 0b1111'11111111;
-    for (uint16_t i = 0; i < max; ++i) {
-        for (uint16_t j = 0; j < max; j += 10) {
-            ASSERT_EQ(Int{i} + Int{j}, Int{static_cast<uint16_t>(i + j)});
+    {
+        using Int = algo::BigInt<2, uint8_t, uint16_t>;
+        uint16_t max = 0b1111'11111111;
+        for (uint16_t i = 0; i < max; ++i) {
+            for (uint16_t j = 0; j < max; j += 10) {
+                ASSERT_EQ(Int{i} + Int{j}, Int{static_cast<uint16_t>(i + j)});
+            }
         }
+    }
+
+    {
+        using Int = algo::BigInt<30, uint8_t, uint16_t>;
+        Int lhs {"278905768535045230537762672916647633790"};
+        Int rhs {"86877037227277156296489520973326592245760"};
+        ASSERT_EQ(lhs + rhs, Int{"87155942995812201527027283646243239879550"});
     }
 }
 
 TEST_F(BigInt, Sub) {
-    using Int = algo::BigInt<2, uint8_t, uint16_t>;
-    uint16_t max = 0b1111'11111111;
-    for (uint16_t i = 0; i < max; ++i) {
-        for (uint16_t j = 0; j < i; j += 10) {
-            ASSERT_EQ(Int{i} - Int{j},
-                      Int{static_cast<uint16_t>(i - j)});
+    {
+        using Int = algo::BigInt<4, uint8_t, uint16_t>;
+        Int lhs {"21310592"};
+        Int rhs {"21299110"};
 
-            ASSERT_EQ(Int{j} - Int{i},
-                      Int(static_cast<uint16_t>(i - j), false));
+        ASSERT_EQ(lhs - rhs, Int{"11482"});
+    }
+
+    {
+        using Int = algo::BigInt<2, uint8_t, uint16_t>;
+        uint16_t max = 0b1111'11111111;
+        for (uint16_t i = 0; i < max; ++i) {
+            for (uint16_t j = 0; j < i; j += 10) {
+                ASSERT_EQ(Int{i} - Int{j},
+                          Int{static_cast<uint16_t>(i - j)});
+
+                ASSERT_EQ(Int{j} - Int{i},
+                          Int(static_cast<uint16_t>(i - j), false));
+            }
         }
     }
 }
@@ -193,36 +225,59 @@ TEST_F(BigInt, MulShort) {
 }
 
 TEST_F(BigInt, Mul) {
-    using Int = algo::BigInt<4, uint8_t, uint16_t>;
-    Converter<Int> convert;
+    {
+        using Int = algo::BigInt<4, uint8_t, uint16_t>;
+        Converter<Int> convert;
 
-    for (uint16_t i = 0b1'00000000; i <= 0b1111'11111111; ++i) {
-        for (uint16_t j = 0b1'00000000; j <= 0b1111'11111111; j += 10) {
-            uint32_t mul = i;
-            mul *= j;
+        for (uint16_t i = 0b1'00000000; i <= 0b1111'11111111; ++i) {
+            for (uint16_t j = 0b1'00000000; j <= 0b1111'11111111; j += 15) {
+                uint32_t mul = i;
+                mul *= j;
 
-            Int lhs {i};
-            Int rhs {j};
-            ASSERT_EQ(lhs * rhs, convert(mul));
-            ASSERT_EQ(lhs * rhs, rhs * lhs);
+                Int lhs {i};
+                Int rhs {j};
+                ASSERT_EQ(lhs * rhs, convert(mul));
+                ASSERT_EQ(lhs * rhs, rhs * lhs);
+            }
         }
+    }
+
+    {
+        using Int = algo::BigInt<10, uint8_t, uint16_t>;
+
+        Int lhs {"67391"};
+        Int rhs {"11482"};
+        ASSERT_EQ(lhs * rhs, Int{"773783462"});
+    }
+
+    {
+        using Int = algo::BigInt<20, uint8_t, uint16_t>;
+
+        Int lhs {"1130648259085"};
+        Int rhs {"192638812232"};
+        ASSERT_EQ(lhs * rhs, Int{"217806737682313003127720"});
     }
 }
 
 TEST_F(BigInt, MulKaratsuba) {
-    using Int = algo::BigInt<100, uint8_t, uint16_t>;
-    SetSeed(1);
+    constexpr size_t cap = 100;
+    using Int = algo::BigInt<cap, uint8_t, uint16_t>;
 
+    SetSeed(1);
     for (size_t i = 0; i < 100; ++i) {
-        std::string lhs_str = RandomBinary(RandomInt<size_t>(320, 400));
-        std::string rhs_str = RandomBinary(RandomInt<size_t>(320, 400));
+        std::string lhs_str = RandomBinary(
+                RandomInt<size_t>(cap * 3.2, cap * 4));
+
+        std::string rhs_str = RandomBinary(
+                RandomInt<size_t>(cap * 3.2, cap * 4));
+
         std::string mul_str = NaiveMul(lhs_str, rhs_str);
 
         {
             Int lhs {lhs_str};
             Int rhs {rhs_str};
             ASSERT_EQ(lhs * rhs, Int{mul_str})
-                << lhs.ToString() << '\n' << rhs.ToString();
+                << lhs << '\n' << rhs;
         }
     }
 }
@@ -242,179 +297,131 @@ TEST_F(BigInt, Serialize) {
     }
 }
 
-TEST_F(BigInt, Tmp) {
-    using Int = algo::BigInt<100, uint8_t, uint16_t>;
-    std::string lhs = "62902805278564175885450201171482551592362697531405419301362439180089461679894169277912768041299508395833040290";
-    std::string rhs = "1124654617929823523508418266605769438880489315693959666619759738912975269702691131329786004609322592816605481539";
-    std::string mul = "70743930437277679583050105498855453208622151128881564088493104886725311177418596746691228539997892898307455561897755738878238501464820919615400067064898595858377940593250734611037776627002322512144977288531782020124480870";
-    std::string true_mul = "70743930437277679583050105498855453208622151128881564088493104886725311177418596746691228539997892420591228115819666652533191680907624168619828393658548722186396980573440661495416770142611965686646161646444967061838206310";
+TEST_F(BigInt, DivShort) {
+    using Int = algo::BigInt<8, uint8_t, uint16_t>;
 
-    // ASSERT_EQ(Int{lhs} * Int{rhs}, Int{mul});
-    Int llhs {lhs};
-    Int rrhs {rhs};
-    ASSERT_EQ(llhs * rrhs, rrhs * llhs);
-    ASSERT_EQ(llhs * rrhs, Int{true_mul}) << llhs << '\n' << rrhs;
+    {
+        for (uint16_t i = 0; i < 0b1111'11111111; ++i) {
+            for (uint16_t j = 1; j < 255; ++j) {
+                ASSERT_EQ(Int{i} / Int{j}, Int{static_cast<uint16_t>(i / j)});
+                ASSERT_EQ(Int{i} % Int{j}, Int{static_cast<uint16_t>(i % j)});
+            }
+        }
+    }
+
+    {
+        Converter<Int> convert;
+
+        for (uint64_t i = 123456789123;
+             i < 12345678912378234ull;
+             i += 9308274565421)
+        {
+            Int div {convert(i)};
+            for (uint64_t j = 1; j < std::numeric_limits<uint8_t>::max(); ++j) {
+                ASSERT_EQ(div / convert(j), convert(i / j));
+                ASSERT_EQ(div % convert(j), convert(i % j));
+            }
+        }
+    }
 }
 
-//TEST_F(BigInt, Tmp) {
-    //using namespace algo::literals;
-    //using Int = algo::BigInt<100, uint8_t, uint16_t>;
+TEST_F(BigInt, Div) {
+    using Int = algo::BigInt<8, uint8_t, uint16_t>;
 
-    //std::fstream f {"test_data.txt"};
-    //std::string lhs_str, rhs_str;
+    {
+        ASSERT_EQ(Int{"123124123"} / Int{"123124123"}, Int{1});
+        ASSERT_EQ(Int{"123124123"} % Int{"123124123"}, Int{0});
+    }
 
-    //f >> lhs_str;
-    //f >> rhs_str;
+    {
+        Converter<Int> convert;
 
-    //std::string mul = "70743930437277679583050105498855453208622151128881564088493104886725311177418596746691228539997892813093209585029772280232905825365429066735108903700522672446619174751879208055278353848705664267596539903727106919457199462";
+        SetSeed(1);
+        for (size_t i = 0; i < 1'000; ++i) {
+            uint64_t divident = RandomInt<uint64_t>();
+            uint64_t divisor = RandomInt<uint64_t>(1, divident);
 
-    //{
-        //Int lhs {lhs_str};
-        //Int rhs {rhs_str};
-        //ASSERT_EQ(lhs * rhs, Int{mul});
-    //}
-//}
+            ASSERT_EQ(convert(divident) / convert(divisor),
+                      convert(divident / divisor)) << divident << '\n' << divisor;
 
+            ASSERT_EQ(convert(divident) % convert(divisor),
+                      convert(divident % divisor));
+        }
 
-//TEST_F(TestBigInt, Mul) {
-    //{
-        //BI32 bi = (1ull << 33) - 1;
-        //ASSERT_EQ(bi * 3ull, ((1ull << 33) - 1) * 3ull);
-    //}
+        for (size_t i = 0; i < 1'000; ++i) {
+            size_t divident_len = RandomInt<size_t>(1, 64);
+            size_t divisor_len = RandomInt<size_t>(1, divident_len);
 
-    //SetSeed(2);
-    //for (size_t i = 0; i < 100; ++i) {
-        //std::string lhs = RandomBinary(RandomInt(48, 53));
-        //std::string rhs = RandomBinary(RandomInt(8, 10));
-        //std::string mul = NaiveMul(lhs, rhs);
+            Int divident {RandomBinary(divident_len)};
+            Int divisor {RandomBinary(divisor_len)};
 
-        //BI32 lhs_bi {lhs};
-        //BI32 rhs_bi {rhs};
-        //BI32 mul_bi {mul};
+            ASSERT_EQ(divident / divisor,
+                      convert(divident.ToUint() / divisor.ToUint()));
 
-        //ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
-        //ASSERT_EQ(mul_bi / lhs_bi, rhs_bi);
-        //ASSERT_EQ(mul_bi / rhs_bi, lhs_bi);
-    //}
+            ASSERT_EQ(divident % divisor,
+                      convert(divident.ToUint() % divisor.ToUint()));
+        }
+    }
+}
 
-    //for (size_t i = 0; i < 100; ++i) {
-        //std::string lhs = RandomBinary(RandomInt(20, 512));
-        //std::string rhs = RandomBinary(RandomInt(28, 512));
-        //std::string mul = NaiveMul(lhs, rhs);
+template<typename T>
+struct PowerModulo;
 
-        //BI32 lhs_bi {lhs};
-        //BI32 rhs_bi {rhs};
-        //BI32 mul_bi {mul};
+template<size_t cap, typename W, typename DW>
+struct PowerModulo<algo::BigInt<cap, W, DW>> {
+    using Int = algo::BigInt<cap, W, DW>;
+    using DInt = algo::BigInt<cap * 2, W, DW>;
 
-        //ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
-        //ASSERT_EQ(rhs_bi * lhs_bi, mul_bi);
-        //ASSERT_EQ(mul_bi / lhs_bi, rhs_bi);
-        //ASSERT_EQ(mul_bi / rhs_bi, lhs_bi);
-    //}
+    PowerModulo(Int mod) noexcept
+        : modulo {std::move(mod)}
+        , big_modulo {modulo.ToView()}
+    {}
 
-    //for (size_t i = 0; i < 100; ++i) {
-        //std::string lhs = RandomBinary(RandomInt(500, 512));
-        //std::string rhs = RandomBinary(RandomInt(500, 512));
-        //std::string mul = NaiveMul(lhs, rhs);
+    void operator()(const Int& base, Int&& exp, Int& res) {
+        if (exp.IsZero()) {
+            res = one;
+        } else if (exp == one) {
+            res = base;
+        } else {
+            bool exp_even = (exp & one).IsZero();
+            (*this)(base, std::move(exp >>= 1), res);
+            MulSelf(res, res);
+            if (!exp_even) {
+                MulSelf(res, base);
+            }
+        }
+    }
 
-        //BI32 lhs_bi {lhs};
-        //BI32 rhs_bi {rhs};
-        //BI32 mul_bi {mul};
+    void MulSelf(Int& self, const Int& rhs) {
+        if (self.words_count + rhs.words_count > cap) {
+            DInt bigger {self.ToView()};
+            bigger *= {rhs.ToView()};
+            bigger %= big_modulo;
+            self = bigger.ToView();
+        } else {
+            self *= rhs;
+            self %= modulo;
+        }
+    }
 
-        //ASSERT_EQ(lhs_bi * rhs_bi, mul_bi);
-        //ASSERT_EQ(rhs_bi * lhs_bi, mul_bi);
-        //ASSERT_EQ(mul_bi / lhs_bi, rhs_bi);
-        //ASSERT_EQ(mul_bi / rhs_bi, lhs_bi);
-        //ASSERT_EQ(lhs_bi / mul_bi, 0);
-        //ASSERT_EQ(mul_bi % lhs_bi, 0);
-    //}
+    Int one {1};
+    Int modulo;
+    DInt big_modulo;
+};
 
-    //for (size_t i = 0; i < 100; ++i) {
-        //std::string q = RandomBinary(RandomInt(500, 500));
-        //std::string d = RandomBinary(RandomInt(400, 400));
-        //std::string r = RandomBinary(RandomInt(100, 399));
-        //std::string m = NaiveAdd(NaiveMul(q, d), r);
+TEST_F(BigInt, Algebra) {
+    using Int = algo::BigInt<32>;
+    // https://oeis.org/A000043
+    Int big_prime = (Int{1} << 127) - Int{1};
+    PowerModulo<Int> pow {big_prime};
 
-        //BI32 m_bi {m};
-        //BI32 d_bi {d};
+    for (uint64_t i = 1; i < 100; ++i) {
+        uint64_t n = RandomInt<uint64_t>(2,
+                                         std::numeric_limits<uint64_t>::max());
 
-        //ASSERT_EQ(m_bi / d_bi, BI32{q});
-        //ASSERT_EQ(m_bi % d_bi, BI32{r});
-    //}
-//}
+        Int ret;
+        pow(Int{n}, big_prime - Int{1}, ret);
+        ASSERT_EQ(ret, Int{1}) << i << '\t' << n;
+    }
+}
 
-//TEST_F(BigInt, BigInt) {
-    //{
-        //BI32 a {"0b11101100"};
-        //ASSERT_EQ(a, 0b11101100);
-        //BI32 b {"0b1001" "11110000"
-                         //"10100000"
-                         //"11110000"
-                         //"10100000"};
-        //ASSERT_EQ(b, 0b1001'1111'0000'1010'0000'1111'0000'1010'0000ull);
-    //}
-
-    //{
-        //ASSERT_EQ(BI32{"0b110111101011110011110101110111001001001"}, BI32{478326484553ull});
-    //}
-
-    //{
-        //BI32 a {12345};
-        //ASSERT_EQ(a.ToString(10), "12345");
-        //ASSERT_EQ(a.ToString(36), "9IX");
-        //ASSERT_EQ(BI32{478326484553ull}.ToString(10), "478326484553");
-
-        //ASSERT_EQ(BI32{"729850759413822409864896864703110513397153737649725935393728469480268371494607235845025611298670241485102205454354037818905499"}.ToString(),
-                       //"729850759413822409864896864703110513397153737649725935393728469480268371494607235845025611298670241485102205454354037818905499");
-    //}
-//}
-
-//void PowerModulo(const BI32& base, BI32& res, BI32&& exp, const BI32& mod) {
-    //if (exp.IsZero()) {
-        //res = 1;
-    //} else if (exp == 1) {
-        //if (base >= mod) {
-            //res = base % mod;
-        //} else {
-            //res = base;
-        //}
-    //} else {
-        //bool is_odd = exp % 2ull == 1ull;
-        //PowerModulo(base, res, std::move(exp >>= 1), mod);
-        //if (res.words_count * 2 > 32) {
-            //algo::BigInt<64> tmp {res.ToView()};
-            //tmp *= tmp;
-            //tmp %= algo::BigInt<64>{mod.ToView()};
-            //res = BI32{mod.ToView()};
-        //} else {
-            //res *= res;
-            //res %= mod;
-        //}
-
-        //if (is_odd) {
-            //if (base.words_count + res.words_count > 32) {
-                //algo::BigInt<64> tmp {res.ToView()};
-                //tmp *= algo::BigInt<64>{base.ToView()};
-                //tmp %= algo::BigInt<64>{mod.ToView()};
-                //res = BI32{mod.ToView()};
-            //} else {
-                //res *= base;
-                //res %= mod;
-            //}
-        //}
-    //}
-//}
-
-//TEST_F(TestBigInt, Algebra) {
-    //// https://oeis.org/A000043
-    //BI32 big_prime {1};
-    //big_prime <<= 606;
-    //big_prime -= 1;
-
-    //for (size_t i = 2; i < 1000; ++i) {
-        //BI32 base {i};
-        //BI32 res;
-        //PowerModulo(base, res, big_prime - 1ull, big_prime);
-        //ASSERT_EQ(res, 1);
-    //}
-//}

@@ -71,25 +71,11 @@ namespace algo {
         constexpr bool IsPowerOf2() const noexcept;
         constexpr size_t BitWidth() const noexcept;
         constexpr std::string ToString(Word base = 10) const noexcept;
+        constexpr uint64_t ToUint() const noexcept;
         constexpr auto ToView() const noexcept;
 
         friend std::ostream& operator<< (std::ostream& os, const BigInt& bi) {
-            os << bi.words_count << ' ';
-            if (bi.is_positive) {
-                os << "+ ";
-            } else {
-                os << "- ";
-            }
-
             os << bi.ToString();
-
-            //std::string sep = "";
-            //for (Word w : std::ranges::reverse_view(bi.ToView())) {
-                //os << sep << +w;
-                //if (sep.empty()) {
-                    //sep = " ";
-                //}
-            //}
             return os;
         }
 
@@ -411,10 +397,15 @@ namespace algo {
             const RandomAccessRange<W> auto& range) noexcept
     {
         words_count = std::ranges::size(range);
-        ASSERT(words_count <= cap);
-        auto range_data = std::ranges::begin(range);
-        for (size_t i = 0; i < words_count; ++i) {
-            binary[i] = range_data[i];
+        if (words_count == 0) {
+            words_count = 1;
+            binary[0] = 0;
+        } else {
+            ASSERT(words_count <= cap);
+            auto range_data = std::ranges::begin(range);
+            for (size_t i = 0; i < words_count; ++i) {
+                binary[i] = range_data[i];
+            }
         }
     }
 
@@ -423,16 +414,16 @@ namespace algo {
             const RandomAccessRange<W> auto& range) noexcept
     {
         auto range_data = std::ranges::begin(range);
-        size_t range_words_count = std::ranges::size(range);
+        size_t range_wc = std::ranges::size(range);
         size_t i = 0;
-        for (bool carry = 0; carry || i < range_words_count; ++i) {
+        for (bool carry = false; carry || i < range_wc; ++i) {
             ASSERT(i < cap, "Addition overflow");
 
             W lhs {0}, rhs {0};
             if (i < words_count) {
                 lhs = binary[i];
             }
-            if (i < range_words_count) {
+            if (i < range_wc) {
                 rhs = range_data[i];
             }
 
@@ -448,6 +439,8 @@ namespace algo {
                 }
 
                 binary[i] = lhs + rhs;
+            } else if (i >= words_count) {
+                binary[i] = 0;
             }
         }
 
@@ -460,27 +453,30 @@ namespace algo {
     constexpr bool BigInt<cap, W, DW>::USubRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
-        auto range_data = std::ranges::begin(range);
-        size_t range_wc = std::ranges::size(range);
+        auto lhs_data = std::ranges::begin(ToView());
+        size_t lhs_wc = words_count;
 
-        const bool this_ge = UCompare(range) >= 0;
-    
+        auto rhs_data = std::ranges::begin(range);
+        size_t rhs_wc = std::ranges::size(range);
+
+        bool this_ge = UCompare(range) >= 0;
+        if (!this_ge) {
+            std::swap(lhs_data, rhs_data);
+            std::swap(lhs_wc, rhs_wc);
+        }
+
+        words_count = 1;
         size_t i = 0;
-        size_t small_iters = std::min(range_wc, words_count);
-        size_t big_iters = std::max(range_wc, words_count);
-        size_t new_wc = 1;
-        for (bool borrow = false; borrow || i < small_iters; ++i) {
+        for (bool borrow = false; borrow || i < rhs_wc; ++i) {
             W lhs {0}, rhs {0};
-            if (i < words_count) {
-                lhs = binary[i];
+            if (i < lhs_wc) {
+                lhs = lhs_data[i];
             }
-            if (i < range_wc) {
-                rhs = range_data[i];
-            }
-            if (!this_ge) {
-                std::swap(lhs, rhs);
+            if (i < rhs_wc) {
+                rhs = rhs_data[i];
             }
 
+            binary[i] = lhs;
             if (rhs != kMaxWord || !borrow) {
                 if (borrow) {
                     rhs += 1;
@@ -492,23 +488,20 @@ namespace algo {
                     borrow = false;
                 }
 
-                binary[i] = lhs - rhs;
-                if (binary[i] != 0) {
-                    new_wc = i + 1;
-                }
+                binary[i] -= rhs;
+            }
+
+            if (binary[i] != 0) {
+                words_count = i + 1;
             }
         }
 
-        if (i < big_iters) {
-            words_count = big_iters;
-        } else {
-            words_count = new_wc;
+        if (i < lhs_wc) {
+            words_count = lhs_wc;
         }
 
-        if (!this_ge) {
-            for (; i < words_count; ++i) {
-                binary[i] = range_data[i];
-            }
+        for (; i < words_count; ++i) {
+            binary[i] = lhs_data[i];
         }
 
         return !this_ge;
@@ -596,7 +589,7 @@ namespace algo {
     constexpr void BigInt<cap, W, DW>::KaratsubaUMulByRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
-        // Multiplication result can fit into SmallInt
+        // Multiplication result fits into SmallInt
         using SmallInt = BigInt<subint_cap, W, DW>;
 
         const size_t mid_thr = (
@@ -611,21 +604,21 @@ namespace algo {
 
         // 2^32 * (
         //      2^32 * (this_h * rhs_h)
-        //        + (this_h + this_l) * (rhs_h * rhs_l)
+        //        + (this_h + this_l) * (rhs_h + rhs_l)
         //        - this_h * rhs_h
         //        - this_l * rhs_l
         //  ) + this_l * rhs_l
         SmallInt mix = (this_l + this_h) * (rhs_l + rhs_h);
-        this_h *= rhs_h;
-        this_l *= rhs_l;
+        SmallInt ups = this_h * rhs_h;
+        SmallInt lws = this_l * rhs_l;
 
-        UResetBinary(this_h.ToView());
+        UResetBinary(ups.ToView());
         *this <<= mid_thr * kWordBSize;
         UAddRange(mix.ToView());
-        USubRange(this_h.ToView());
-        USubRange(this_l.ToView());
+        USubRange(ups.ToView());
+        USubRange(lws.ToView());
         *this <<= mid_thr * kWordBSize;
-        UAddRange(this_l.ToView());
+        UAddRange(lws.ToView());
     }
 
     template<size_t cap, typename W, typename DW>
@@ -635,7 +628,7 @@ namespace algo {
         size_t range_wc = std::ranges::size(range);
         if (words_count == 1 || range_wc == 1) {
             UMulByShortRange(range);
-        } else if constexpr (cap < 400) {
+        } else if constexpr (cap < 40) {
             BigInt ret;
             auto it = std::ranges::begin(range);
             for (size_t i = 0; i < range_wc; ++i, ++it) {
@@ -741,13 +734,16 @@ namespace algo {
     constexpr BigInt<cap, W, DW> BigInt<cap, W, DW>::UDivByRange(
             const RandomAccessRange<W> auto& range) noexcept
     {
-        if (auto cmp = UCompare(range); cmp <= 0) {
+        if (auto cmp = UCompare(range); cmp < 0) {
             BigInt remainder {ToView()};
             UResetBinary(std::ranges::single_view(W{0}));
             return remainder;
+        } else if (cmp == 0) {
+            UResetBinary(std::ranges::single_view(W{1}));
+            return BigInt{};
         } else if (std::ranges::size(range) == 1) {
             return UDivByWord(*std::ranges::begin(range));
-        } else if (BitWidth() - RangeBitWidth(range) <= kWordBSize) {
+        } else if (BitWidth() - RangeBitWidth(range) < kWordBSize) {
             return UDivBySameRange(range);
         } else {
             BigInt r, q; // remainder and quotient
@@ -836,8 +832,8 @@ namespace algo {
     constexpr BigInt<cap, W, DW>& BigInt<cap, W, DW>::operator&=(
             const BigInt& other) noexcept
     {
-        const size_t iterations = std::max(words_count, other.words_count);
-        words_count = 0;
+        const size_t iterations = std::min(words_count, other.words_count);
+        words_count = 1;
         for (size_t i = 0; i < iterations; ++i) {
             if ((binary[i] &= other.binary[i])) {
                 words_count = i + 1;
@@ -876,6 +872,10 @@ namespace algo {
         constexpr std::string_view alphabet = "0123456789"
                                               "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         ASSERT(base >= 2 && base <= 36);
+        if (IsZero()) {
+            return "0";
+        }
+
         std::string ret;
         BigInt copy {ToView()};
 
@@ -887,6 +887,16 @@ namespace algo {
             ret.push_back('-');
         }
         std::reverse(ret.begin(), ret.end());
+        return ret;
+    }
+
+    template<size_t cap, typename W, typename DW>
+    constexpr uint64_t BigInt<cap, W, DW>::ToUint() const noexcept {
+        ASSERT(words_count * kWordBSize <= 64);
+        uint64_t ret = 0;
+        for (W w : std::ranges::reverse_view(ToView())) {
+            ret = (ret << kWordBSize) + w;
+        }
         return ret;
     }
 
