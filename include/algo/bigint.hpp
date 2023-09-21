@@ -24,13 +24,17 @@ namespace algo {
                       "DoubleWord should be able to hold "
                           "result of any Word multiplication");
 
+        static constexpr bool kInfInt =
+                (words_capacity == std::numeric_limits<size_t>::max());
+
         static constexpr size_t kWordBSize = std::numeric_limits<Word>::digits;
+
         static_assert(
+            kInfInt ||
             std::numeric_limits<size_t>::max() / kWordBSize >= words_capacity,
             "Every single bit should be indexable by size_t");
 
         static constexpr Word kMaxWord = std::numeric_limits<Word>::max();
-        static constexpr bool kInfInt = false;
 
     public:
         constexpr BigInt() noexcept;
@@ -55,6 +59,7 @@ namespace algo {
         constexpr BigInt operator<<(size_t) const noexcept;
         constexpr BigInt operator>>(size_t) const noexcept;
 
+        constexpr BigInt operator+() const noexcept;
         constexpr BigInt operator-() const noexcept;
         constexpr BigInt& operator+=(const BigInt&) noexcept;
         constexpr BigInt& operator-=(const BigInt&) noexcept;
@@ -136,27 +141,14 @@ namespace algo {
         constexpr void PowerInner(BigInt& res, BigInt&& exp) const noexcept;
     };
 
-    // Literals
-    namespace literals {
-
-        constexpr BigInt<100, uint8_t, uint16_t>
-            operator ""_bi(const char* str, size_t len) noexcept
-        {
-            return BigInt<100, uint8_t, uint16_t> {std::string_view{str, len}};
-        }
-
-    } // namespace literals
-
     // Traits
-    using VecBigInt = BigInt<-1ull>;
+    using InfInt = BigInt<-1ull>;
 
     template<typename T>
     struct IsBigInt : std::false_type {};
 
     template<size_t S, typename Word, typename DoubleWord>
     struct IsBigInt<BigInt<S, Word, DoubleWord>> : std::true_type {};
-
-    // Ostream
 
     // Implementation
     template<size_t cap, typename W, typename DW>
@@ -384,8 +376,13 @@ namespace algo {
     }
 
     template<size_t cap, typename W, typename DW>
-    constexpr BigInt<cap, W, DW>
-            BigInt<cap, W, DW>::operator-() const noexcept
+    constexpr BigInt<cap, W, DW> BigInt<cap, W, DW>::operator+() const noexcept
+    {
+        return *this;
+    }
+
+    template<size_t cap, typename W, typename DW>
+    constexpr BigInt<cap, W, DW> BigInt<cap, W, DW>::operator-() const noexcept
     {
         BigInt copy = *this;
         copy.is_positive ^= true;
@@ -791,14 +788,28 @@ namespace algo {
     template<size_t cap, typename W, typename DW>
     constexpr BigInt<cap, W, DW> BigInt<cap, W, DW>::operator~() const noexcept
     {
-        static_assert(cap != -1ull, "Can't negate unbound BigInt");
-        BigInt ret;
-        ret.is_positive = is_positive;
-        for (size_t i = 0; i < cap; ++i) {
-            if ((ret.binary[i] = ~binary[i])) {
-                ret.words_count = i + 1;
+        static_assert(!kInfInt, "Can't negate unbound BigInt");
+        BigInt ret = *this;
+        if (ret.words_count < cap) {
+            for (size_t i = 0; i < ret.words_count; ++i) {
+                ret.binary[i] = ~ret.binary[i];
+            }
+            for (size_t i = ret.words_count; i < cap; ++i) {
+                ret.binary[i] = ~0;
+            }
+            ret.words_count = cap;
+        } else {
+            ret.words_count = 1;
+            for (size_t i = 0; i < cap; ++i) {
+                size_t idx = cap - 1;
+                if ((ret.binary[idx] = ~ret.binary[idx])
+                    && ret.words_count == 1)
+                {
+                    ret.words_count = idx + 1;
+                }
             }
         }
+
         return ret;
     }
 
@@ -806,25 +817,41 @@ namespace algo {
     constexpr BigInt<cap, W, DW>& BigInt<cap, W, DW>::operator^=(
             const BigInt& other) noexcept
     {
-        const size_t iterations = std::max(words_count, other.words_count);
-        words_count = 0;
-        for (size_t i = 0; i < iterations; ++i) {
-            if ((binary[i] ^= other.binary[i])) {
-                words_count = i + 1;
+        if (words_count != other.words_count) {
+            size_t iters = std::min(words_count, other.words_count);
+            for (size_t i = 0; i < iters; ++i) {
+                binary[i] ^= other.binary[i];
+            }
+
+            if (words_count < other.words_count) {
+                for (size_t i = iters; i < other.words_count; ++i) {
+                    binary[i] = other.binary[i];
+                }
+                words_count = other.words_count;
+            }
+        } else {
+            for (size_t i = 0; i < words_count; ++i) {
+                binary[i] ^= other.binary[i];
             }
         }
-        return *this;
     }
 
     template<size_t cap, typename W, typename DW>
     constexpr BigInt<cap, W, DW>& BigInt<cap, W, DW>::operator|=(
             const BigInt& other) noexcept
     {
-        const size_t iterations = std::max(words_count, other.words_count);
-        words_count = iterations;
-        for (size_t i = 0; i < iterations; ++i) {
+        size_t iters = std::min(words_count, other.words_count);
+        for (size_t i = 0; i < iters; ++i) {
             binary[i] |= other.binary[i];
         }
+
+        if (iters < other.words_count) {
+            for (size_t i = iters; i < other.words_count; ++i) {
+                binary[i] = other.binary[i];
+            }
+            words_count = other.words_count;
+        }
+
         return *this;
     }
 
