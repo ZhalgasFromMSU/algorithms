@@ -22,7 +22,7 @@ add_compile_options(-Werror -Wall -pedantic -g)
 
 option(BUILD_TESTS "Build tests" OFF)
 
-if (BUILD_TESTS)
+if (BUILD_TESTS AND (${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME}))
     message("Building tests")
     add_subdirectory(tests EXCLUDE_FROM_ALL)
 endif()
