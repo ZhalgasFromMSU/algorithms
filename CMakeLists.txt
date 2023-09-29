@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.24)
 
 project(Algorithm)
 
@@ -20,9 +20,20 @@ PUBLIC
 
 add_compile_options(-Werror -Wall -pedantic -g)
 
-option(BUILD_TESTS "Build tests" OFF)
+set(IS_ROOT_DIR OFF)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(IS_ROOT_DIR ON)
+endif()
 
-if (BUILD_TESTS AND CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_BENCHMARK "Build benchmarks" OFF)
+
+if (BUILD_TESTS AND IS_ROOT_DIR)
     message("Building tests")
     add_subdirectory(tests EXCLUDE_FROM_ALL)
+endif()
+
+IF (BUILD_BENCHMARK AND IS_ROOT_DIR)
+    message("Building benchmark")
+    add_subdirectory(benchmark EXCLUDE_FROM_ALL)
 endif()
