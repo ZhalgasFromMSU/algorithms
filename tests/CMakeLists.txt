@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.24)
 
 project(Tests)
 
@@ -16,7 +16,7 @@ set(FETCHCONTENT_QUIET FALSE)
 FetchContent_Declare(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG f8d7d77c06936315286eb55f8de22cd23c188571
+    GIT_TAG f8d7d77c06936315286eb55f8de22cd23c188571 # release-1.14.0
 )
 
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -37,5 +37,3 @@ target_link_libraries(${PROJECT_NAME} GTest::gtest_main ${CMAKE_PROJECT_NAME})
 include(GoogleTest)
 gtest_discover_tests(${PROJECT_NAME})
 
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/test_data.txt
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
