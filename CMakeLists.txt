@@ -24,5 +24,5 @@ option(BUILD_TESTS "Build tests" OFF)
 
 if (BUILD_TESTS)
     message("Building tests")
-    add_subdirectory(tests)
+    add_subdirectory(tests EXCLUDE_FROM_ALL)
 endif()
