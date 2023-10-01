@@ -1,7 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF)
+set(BENCHMARK_ENABLE_TESTING OFF)
 set(FETCHCONTENT_QUIET OFF)
+set(CMAKE_BUILD_TYPE Release)
 
 project(Benchmark)
 
