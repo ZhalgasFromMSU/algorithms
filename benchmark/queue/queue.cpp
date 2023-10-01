@@ -85,12 +85,14 @@ public:
   }
 };
 
-template<typename QueueFactory>
+template<typename QueueFactory, bool spsc>
 static void BM_QueueInsertion(benchmark::State& state) {
   constexpr size_t max = 1'000;
+  size_t producers = spsc ? 1 : std::thread::hardware_concurrency() / 2;
+  size_t consumers = spsc ? 1 : std::thread::hardware_concurrency() / 2;
+
   for (auto _ : state) {
-    Benchmarker bm{std::thread::hardware_concurrency() / 2 /* consumers */,
-                   std::thread::hardware_concurrency() / 2 /* producers */};
+    Benchmarker bm{producers, consumers};
 
     std::atomic<size_t> n_push, n_pop;
     auto q = QueueFactory::New(state.range(0));
@@ -122,10 +124,14 @@ static void BM_QueueInsertion(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_QueueInsertion<QueueFactory<algo::LfQueue<size_t>>>)
+BENCHMARK(BM_QueueInsertion<QueueFactory<algo::LfQueue<size_t>>, false>)
     ->RangeMultiplier(10)
     ->Range(10, 1000);
 
-// BENCHMARK(BM_QueueInsertion<QueueFactory<FriendlyConcurrentQueue>>)
-//->RangeMultiplier(10)
-//->Range(10, 1000);
+BENCHMARK(BM_QueueInsertion<QueueFactory<algo::LfQueue<size_t>>, true>)
+    ->RangeMultiplier(10)
+    ->Range(10, 1000);
+
+BENCHMARK(BM_QueueInsertion<QueueFactory<FriendlyConcurrentQueue>, true>)
+    ->RangeMultiplier(10)
+    ->Range(10, 1000);
