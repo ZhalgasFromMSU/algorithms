@@ -1,4 +1,5 @@
 #include <algo/sync/queue.hpp>
+#include <concurrentqueue.h>
 
 #include <benchmark/benchmark.h>
 
@@ -15,7 +16,7 @@ public:
     assert(num_prods > 0 && num_const > 0 && "No threads created");
   }
 
-  template <typename F>
+  template<typename F>
   void SetProducerFunc(F func) noexcept {
     for (auto& t : prods_) {
       t = std::jthread{[&, func] {
@@ -26,7 +27,7 @@ public:
     }
   }
 
-  template <typename F>
+  template<typename F>
   void SetConsumerFunc(F func) noexcept {
     for (auto& t : cons_) {
       t = std::jthread{[&, func] {
@@ -57,15 +58,42 @@ private:
   std::latch latch;
 };
 
-template <typename Queue>
+template<typename T>
+struct QueueFactory {
+  using Type = T;
+
+  static T New(size_t max_size) noexcept {
+    return T{max_size};
+  }
+};
+
+class FriendlyConcurrentQueue : protected moodycamel::ConcurrentQueue<size_t> {
+public:
+  using moodycamel::ConcurrentQueue<size_t>::ConcurrentQueue;
+
+  bool Push(size_t&& item) {
+    return try_enqueue(std::move(item));
+  }
+
+  std::optional<size_t> Pop() {
+    size_t ret;
+    if (!try_dequeue(ret)) {
+      return std::nullopt;
+    } else {
+      return ret;
+    }
+  }
+};
+
+template<typename QueueFactory>
 static void BM_QueueInsertion(benchmark::State& state) {
-  constexpr size_t max = 100'000;
+  constexpr size_t max = 1'000;
   for (auto _ : state) {
     Benchmarker bm{std::thread::hardware_concurrency() / 2 /* consumers */,
                    std::thread::hardware_concurrency() / 2 /* producers */};
 
     std::atomic<size_t> n_push, n_pop;
-    Queue q(state.range(0));
+    auto q = QueueFactory::New(state.range(0));
     bm.SetConsumerFunc([&] {
       while (true) {
         size_t cur = n_push.fetch_add(1, std::memory_order_relaxed);
@@ -94,6 +122,10 @@ static void BM_QueueInsertion(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_QueueInsertion<algo::LfQueue<size_t>>)
+BENCHMARK(BM_QueueInsertion<QueueFactory<algo::LfQueue<size_t>>>)
     ->RangeMultiplier(10)
     ->Range(10, 1000);
+
+// BENCHMARK(BM_QueueInsertion<QueueFactory<FriendlyConcurrentQueue>>)
+//->RangeMultiplier(10)
+//->Range(10, 1000);
