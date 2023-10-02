@@ -33,6 +33,7 @@ namespace algo {
         std::atomic<size_t> pop_ptr_ = -1; // points to an element before last
     };
 
+    // Implementation
     template<typename T>
     LfQueue<T>::LfQueue(size_t max_size) noexcept
         : data_(max_size + 1)
