@@ -19,3 +19,7 @@ FetchContent_MakeAvailable(
 add_subdirectory(
   queue
 )
+
+add_subdirectory(
+  bigint
+)

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(Benchmark)
+project(Queue)
 
 add_subdirectory(
   thirdparty
