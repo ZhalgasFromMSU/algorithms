@@ -8,10 +8,3 @@ target_sources(${PROJECT_NAME}
 PUBLIC
   queue.cpp
 )
-
-target_link_libraries(
-  ${PROJECT_NAME}
-
-  concurrentqueue
-)
-

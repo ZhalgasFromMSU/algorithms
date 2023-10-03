@@ -14,7 +14,7 @@ class LfQueue {
                 "Can't use noexcept Pop");
 
 public:
-  LfQueue(size_t max_size) noexcept;
+  LfQueue(std::size_t max_size) noexcept;
 
   bool Push(T&& obj) noexcept;
   std::optional<T> Pop() noexcept;
@@ -22,27 +22,28 @@ public:
 private:
   struct Node {
     std::optional<T> object;
-    std::atomic<size_t> write_order = 0;
-    std::atomic<size_t> read_order = 0;
+    std::atomic<std::size_t> write_order = 0;
+    std::atomic<std::size_t> read_order = 0;
   };
 
   std::vector<Node> data_;
-  std::atomic<size_t> push_ptr_ = -1; // first write should be at 0-th index
-  std::atomic<size_t> pop_ptr_ = -1;  // points to an element before last
+  std::atomic<std::size_t> push_ptr_ =
+      -1;                                 // first write should be at 0-th index
+  std::atomic<std::size_t> pop_ptr_ = -1; // points to an element before last
 };
 
 // Implementation
 template<typename T>
-LfQueue<T>::LfQueue(size_t max_size) noexcept
+LfQueue<T>::LfQueue(std::size_t max_size) noexcept
     : data_(max_size + 1) {
 }
 
 template<typename T>
 bool LfQueue<T>::Push(T&& obj) noexcept {
-  size_t idx;
-  size_t push_ptr = push_ptr_;
+  std::size_t idx;
+  std::size_t push_ptr = push_ptr_;
   while (true) {
-    size_t new_ptr = push_ptr + 1;
+    std::size_t new_ptr = push_ptr + 1;
     if (new_ptr - pop_ptr_ >= data_.size()) {
       return false;
     }
@@ -54,7 +55,7 @@ bool LfQueue<T>::Push(T&& obj) noexcept {
   }
 
   Node& node = data_[idx % data_.size()];
-  size_t current_order = idx / data_.size();
+  std::size_t current_order = idx / data_.size();
 
   while (current_order > node.write_order) {
     // Spin-wait for our turn to write to this position
@@ -71,8 +72,8 @@ bool LfQueue<T>::Push(T&& obj) noexcept {
 
 template<typename T>
 std::optional<T> LfQueue<T>::Pop() noexcept {
-  size_t idx;
-  size_t pop_ptr = pop_ptr_;
+  std::size_t idx;
+  std::size_t pop_ptr = pop_ptr_;
   while (true) {
     if (pop_ptr == push_ptr_) {
       return std::nullopt;
@@ -85,7 +86,7 @@ std::optional<T> LfQueue<T>::Pop() noexcept {
   }
 
   Node& node = data_[idx % data_.size()];
-  size_t current_order = idx / data_.size();
+  std::size_t current_order = idx / data_.size();
 
   while (current_order > node.read_order) {
     // Spin-wait for our turn to read data from this position

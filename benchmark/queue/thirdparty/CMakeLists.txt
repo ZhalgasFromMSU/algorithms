@@ -9,3 +9,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(
   cameron314_queue
 )
+
+target_link_libraries(${PROJECT_NAME}
+  concurrentqueue
+)
