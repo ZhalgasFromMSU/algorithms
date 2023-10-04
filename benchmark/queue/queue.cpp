@@ -4,6 +4,7 @@
 #include <benchmark/benchmark.h>
 
 #include <chrono>
+#include <deque>
 #include <latch>
 #include <thread>
 
@@ -85,6 +86,40 @@ public:
   }
 };
 
+template<typename T>
+class LockingQueue {
+public:
+  LockingQueue(size_t max_size)
+      : data_(max_size) {
+  }
+
+  bool Push(T&& item) {
+    std::scoped_lock lock{mutex_};
+    if (data_.size() == data_.max_size()) {
+      return false;
+    }
+
+    data_.push_front(std::move(item));
+    return true;
+  }
+
+  std::optional<size_t> Pop() {
+    std::scoped_lock lock{mutex_};
+
+    if (data_.empty()) {
+      return std::nullopt;
+    }
+
+    T ret = std::move(data_.back());
+    data_.pop_back();
+    return std::move(ret);
+  }
+
+private:
+  std::deque<T> data_;
+  std::mutex mutex_;
+};
+
 template<typename QueueFactory, bool spsc>
 static void BM_QueueInsertion(benchmark::State& state) {
   constexpr size_t max = 1'000;
@@ -125,6 +160,10 @@ static void BM_QueueInsertion(benchmark::State& state) {
 }
 
 BENCHMARK(BM_QueueInsertion<QueueFactory<algo::LfQueue<size_t>>, false>)
+    ->RangeMultiplier(10)
+    ->Range(10, 1000);
+
+BENCHMARK(BM_QueueInsertion<QueueFactory<LockingQueue<size_t>>, false>)
     ->RangeMultiplier(10)
     ->Range(10, 1000);
 

@@ -57,7 +57,7 @@ public:
   constexpr BigInt operator<<(std::size_t) const noexcept;
   constexpr BigInt operator>>(std::size_t) const noexcept;
 
-  constexpr BigInt operator+() const noexcept;
+  constexpr const BigInt& operator+() const noexcept;
   constexpr BigInt operator-() const noexcept;
   constexpr BigInt& operator+=(const BigInt&) noexcept;
   constexpr BigInt& operator-=(const BigInt&) noexcept;
@@ -359,7 +359,8 @@ BigInt<cap, W, DW>::operator>>(std::size_t shift_int) const noexcept {
 }
 
 template<std::size_t cap, typename W, typename DW>
-constexpr BigInt<cap, W, DW> BigInt<cap, W, DW>::operator+() const noexcept {
+constexpr const BigInt<cap, W, DW>&
+BigInt<cap, W, DW>::operator+() const noexcept {
   return *this;
 }
 
