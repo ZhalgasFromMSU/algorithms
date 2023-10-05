@@ -53,7 +53,7 @@ TEST(Queue, Datarace) {
    * Test that all elements are pushed/popped once and only once
    */
   std::size_t threads = 10;
-  LfQueue<std::size_t> q{5};
+  LfQueue<std::size_t> q{10};
   constexpr std::size_t max_counter = 1'000'000;
   std::atomic<std::size_t> pushed, popped;
   std::vector<std::atomic_flag> flags(max_counter);
@@ -64,7 +64,7 @@ TEST(Queue, Datarace) {
     for (auto& prod : prods) {
       prod = std::jthread{[&] {
         while (true) {
-          std::size_t cur = pushed.fetch_add(1);
+          std::size_t cur = pushed.fetch_add(1, std::memory_order_relaxed);
           if (cur >= max_counter) {
             break;
           }
@@ -77,13 +77,14 @@ TEST(Queue, Datarace) {
     for (auto& con : cons) {
       con = std::jthread{[&] {
         while (true) {
-          std::size_t cur = popped.fetch_add(1);
+          std::size_t cur = popped.fetch_add(1, std::memory_order_relaxed);
           if (cur >= max_counter) {
             break;
           }
 
           std::size_t front = q.Pop();
-          ASSERT_EQ(flags.at(front).test_and_set(), false);
+          ASSERT_EQ(flags.at(front).test_and_set(std::memory_order_relaxed),
+                    false);
         }
       }};
     }
