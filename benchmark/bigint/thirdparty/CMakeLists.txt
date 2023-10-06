@@ -10,7 +10,7 @@ file(DOWNLOAD
 
 # Cryptopp Integer
 find_library(CRYPTOPP cryptopp)
-if (CRYPTOPP_NOTFOUND)
+if (CRYPTOPP STREQUAL "CRYPTOPP-NOTFOUND")
   message("cryptopp was not found")
   set_target_properties(${PROJECT_NAME}
     PROPERTIES
