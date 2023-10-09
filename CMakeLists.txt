@@ -37,3 +37,4 @@ IF (BUILD_BENCHMARK AND IS_ROOT_DIR)
     message("Building benchmark")
     add_subdirectory(benchmark EXCLUDE_FROM_ALL)
 endif()
+
