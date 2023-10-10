@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <cassert>
-#include <iostream>
 #include <optional>
 #include <vector>
 
@@ -22,10 +21,10 @@ public:
   LfQueue(std::size_t max_size) noexcept;
 
   // Block until data can be pushed/popped
-  void Push(T&& obj) noexcept;
+  void Push(T obj) noexcept;
   T Pop() noexcept;
 
-  bool TryPush(T&& obj) noexcept;
+  bool TryPush(T obj) noexcept;
   std::optional<T> TryPop() noexcept;
 
 private:
@@ -60,7 +59,7 @@ LfQueue<T, spsc>::LfQueue(std::size_t max_size) noexcept
 }
 
 template<typename T, bool spsc>
-void LfQueue<T, spsc>::Push(T&& obj) noexcept {
+void LfQueue<T, spsc>::Push(T obj) noexcept {
   size_t push_ptr = push_ptr_.fetch_add(1, std::memory_order_relaxed) + 1;
 
   if constexpr (spsc) {
@@ -144,7 +143,7 @@ T LfQueue<T, spsc>::Pop() noexcept {
 }
 
 template<typename T, bool spsc>
-bool LfQueue<T, spsc>::TryPush(T&& obj) noexcept {
+bool LfQueue<T, spsc>::TryPush(T obj) noexcept {
   if constexpr (spsc) {
     std::size_t push_ptr = push_ptr_.load(std::memory_order_relaxed);
     std::size_t pop_ptr = pop_ptr_.load(std::memory_order_relaxed);

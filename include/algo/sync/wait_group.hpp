@@ -12,11 +12,13 @@ public:
 
   bool Inc() noexcept;
   bool Dec() noexcept;
+  bool WaitAndDec() noexcept; // only fails if object is in terminal state
+
   void Block() noexcept;
   void BlockAndWait() noexcept;
 
   bool Blocked() const noexcept;
-  bool Waited() const noexcept;
+  bool Finished() const noexcept;
 
 private:
   static constexpr int negative_zero_ = std::numeric_limits<int>::min();

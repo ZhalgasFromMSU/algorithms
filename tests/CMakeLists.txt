@@ -29,6 +29,7 @@ add_executable(${PROJECT_NAME}
     string.cpp
     sync/wait_group.cpp
     sync/queue.cpp
+    sync/thread_pool.cpp
     # field.cpp
 )
 
