@@ -18,6 +18,7 @@ if (CRYPTOPP STREQUAL "CRYPTOPP-NOTFOUND")
     -DNCRYPTOPP
   )
 else()
+  message("found cryptopp: " ${CRYPTOPP})
   target_link_libraries(${PROJECT_NAME}
     ${CRYPTOPP}
   )

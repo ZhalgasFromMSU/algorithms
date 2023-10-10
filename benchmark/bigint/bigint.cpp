@@ -10,23 +10,27 @@
 
 #include <random>
 
-template <typename T> struct BigIntFactory {
+template<typename T>
+struct BigIntFactory {
   using Type = T;
 
-  static T New(uint64_t val) noexcept { return T(val); }
+  static T New(uint64_t val) noexcept {
+    return T(val);
+  }
 
-  static T New(std::string &&s) noexcept {
+  static T New(std::string&& s) noexcept {
 #ifndef NCRYPTOPP
     if constexpr (std::same_as<T, CryptoPP::Integer>) {
       return T(s.c_str());
-    }
+    } else
 #endif
 
-    return T(std::move(s));
+      return T(std::move(s));
   }
 };
 
-template <typename Factory> static void BM_LongMul(benchmark::State &state) {
+template<typename Factory>
+static void BM_LongMul(benchmark::State& state) {
   using BigInt = Factory::Type;
   const std::size_t len = 10'000;
   std::string lhs_str, rhs_str;
@@ -64,7 +68,8 @@ template <typename Factory> static void BM_LongMul(benchmark::State &state) {
   }
 }
 
-template <typename Factory> static void BM_Fermat(benchmark::State &state) {
+template<typename Factory>
+static void BM_Fermat(benchmark::State& state) {
   using BigInt = Factory::Type;
   uint64_t big_prime = (1ull << 19) - 1;
   BigInt big_prime_bi = Factory::New(big_prime);
