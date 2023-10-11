@@ -47,6 +47,18 @@ public:
     return &std::get<T>(*this);
   }
 
+  T&& Value() && noexcept {
+    return **this;
+  }
+
+  T& Value() & noexcept {
+    return **this;
+  }
+
+  const T& Value() const& noexcept {
+    return **this;
+  }
+
   const E& Error() const noexcept {
     if (*this) {
       return E{};
