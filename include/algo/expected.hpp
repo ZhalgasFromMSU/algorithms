@@ -60,11 +60,15 @@ public:
   }
 
   const E& Error() const noexcept {
-    if (*this) {
-      return E{};
-    }
-
     return std::get<E>(*this);
+  }
+
+  E ErrorOr(E other) const noexcept {
+    if (*this) {
+      return std::move(other);
+    } else {
+      return Error();
+    }
   }
 };
 
