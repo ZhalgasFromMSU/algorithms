@@ -48,7 +48,7 @@ public:
   }
 
   T&& Value() && noexcept {
-    return **this;
+    return *std::move(*this);
   }
 
   T& Value() & noexcept {
