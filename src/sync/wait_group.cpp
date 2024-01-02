@@ -1,108 +1,117 @@
-#include <algo/sync/wait_group.hpp>
+module;
+
 #include <atomic>
+#include <limits>
+
+export module algo:wait_group;
 
 namespace algo {
 
-WaitGroup::WaitGroup(int init) noexcept
-    : counter_{init} {
-}
+  export class WaitGroup {
+  public:
+    WaitGroup() noexcept = default;
 
-bool WaitGroup::Inc() noexcept {
-  int cur = counter_.load(std::memory_order_relaxed);
-  while (cur >= 0) {
-    if (counter_.compare_exchange_strong(cur, cur + 1,
-                                         std::memory_order_relaxed)) {
-      if (cur == 0) {
-        counter_.notify_one();
-      }
-
-      return true;
+    explicit WaitGroup(int init) noexcept
+        : counter_{init} {
     }
-  }
-  return false;
-}
 
-bool WaitGroup::Dec() noexcept {
-  int cur = counter_.load(std::memory_order_relaxed);
-  while (cur != 0 && cur != negative_zero_) {
-    if (cur == -1 && counter_.compare_exchange_strong(
-                         cur, negative_zero_, std::memory_order_relaxed)) {
-      counter_.notify_all();
-      return true;
-    } else {
-      int next_cur;
-      if (cur > 0) {
-        next_cur = cur - 1;
-      } else { // cur < -1
-        next_cur = cur + 1;
-      }
-
-      if (counter_.compare_exchange_strong(cur, next_cur,
+    bool TryInc() noexcept {
+      int current = counter_.load(std::memory_order_relaxed);
+      while (current >= 0) {
+        if (counter_.compare_exchange_weak(current, current + 1,
                                            std::memory_order_relaxed)) {
-        return true;
+          if (current == 0) {
+            counter_.notify_all();
+          }
+          return true;
+        }
+      }
+      return false;
+    }
+
+    bool TryDec() noexcept {
+      int current = counter_.load(std::memory_order_relaxed);
+      while (current != 0 && current != neg_zero_) {
+        int next;
+        if (current == -1) {
+          next = neg_zero_;
+        } else if (current < 0) {
+          next = current + 1;
+        } else {
+          next = current - 1;
+        }
+
+        if (counter_.compare_exchange_strong(current, next,
+                                             std::memory_order_relaxed)) {
+          if (next == neg_zero_) {
+            counter_.notify_all();
+          }
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Wait for decrease to be possible and decrease counter
+    bool Dec() noexcept {
+      int current = counter_.load(std::memory_order_relaxed);
+      while (current != neg_zero_) {
+        if (current == 0) {
+          counter_.wait(0, std::memory_order_relaxed);
+          current = counter_.load(std::memory_order_relaxed);
+        } else {
+          int next;
+          if (current == -1) {
+            next = neg_zero_;
+          } else if (current < 0) {
+            next = current + 1;
+          } else {
+            next = current - 1;
+          }
+
+          if (counter_.compare_exchange_strong(current, next,
+                                               std::memory_order_relaxed)) {
+            if (next == neg_zero_) {
+              counter_.notify_all();
+            }
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    void Block() noexcept {
+      int current = counter_.load(std::memory_order_relaxed);
+      while (current >= 0) {
+        int next;
+        if (current == 0) {
+          next = neg_zero_;
+        } else {
+          next = -current;
+        }
+
+        if (counter_.compare_exchange_strong(current, next,
+                                             std::memory_order_relaxed)) {
+          if (next == neg_zero_) {
+            counter_.notify_all();
+          }
+        }
       }
     }
-  }
 
-  return false;
-}
-
-bool WaitGroup::WaitAndDec() noexcept {
-  int cur = counter_.load(std::memory_order_relaxed);
-  while (cur != negative_zero_) {
-    if (cur == 0) {
-      counter_.wait(cur, std::memory_order_relaxed);
-      cur = counter_.load(std::memory_order_relaxed);
-    } else if (cur == -1 &&
-               counter_.compare_exchange_strong(cur, negative_zero_,
-                                                std::memory_order_relaxed)) {
-      counter_.notify_all();
-      return true;
-    } else {
-      int next_cur;
-      if (cur > 0) {
-        next_cur = cur - 1;
-      } else { // cur < -1
-        next_cur = cur + 1;
-      }
-
-      if (counter_.compare_exchange_strong(cur, next_cur,
-                                           std::memory_order_relaxed)) {
-        return true;
+    // Wait until counter is in terminal state
+    void Wait() noexcept {
+      int current = counter_.load(std::memory_order_relaxed);
+      while (current != neg_zero_) {
+        counter_.wait(current, std::memory_order_relaxed);
+        current = counter_.load(std::memory_order_relaxed);
       }
     }
-  }
-  return false;
-}
 
-void WaitGroup::Block() noexcept {
-  int cur = counter_.load(std::memory_order_relaxed);
-  while (cur >= 0) {
-    if (cur == 0) {
-      counter_.compare_exchange_strong(cur, negative_zero_,
-                                       std::memory_order_relaxed);
-      counter_.notify_all();
-    } else {
-      counter_.compare_exchange_strong(cur, -cur, std::memory_order_relaxed);
-    }
-  }
-}
-
-void WaitGroup::BlockAndWait() noexcept {
-  Block();
-  int cur = counter_.load(std::memory_order_relaxed);
-  while (cur != negative_zero_) {
-    counter_.wait(cur, std::memory_order_relaxed);
-    cur = counter_.load(std::memory_order_relaxed);
-  }
-}
-
-bool WaitGroup::Blocked() const noexcept {
-  return counter_.load(std::memory_order_relaxed) < 0;
-}
-
-bool WaitGroup::Finished() const noexcept {
-  return counter_.load(std::memory_order_relaxed) == negative_zero_;
-}
+  private:
+    static constexpr int neg_zero_ = std::numeric_limits<int>::min();
+    std::atomic<int> counter_ = 0;
+  };
 
 } // namespace algo
