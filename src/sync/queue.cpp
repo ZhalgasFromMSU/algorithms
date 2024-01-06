@@ -24,8 +24,8 @@ namespace algo {
       std::size_t idx;
       while (true) {
         std::size_t cur_w_idx = write_idx_.load(std::memory_order_relaxed);
-        if (cur_w_idx - read_idx_.load(std::memory_order_relaxed) >=
-            data_.size()) {
+        std::size_t cur_r_idx = read_idx_.load(std::memory_order_relaxed);
+        if (cur_w_idx >= cur_r_idx && cur_w_idx - cur_r_idx >= data_.size()) {
           return false;
         }
 
@@ -40,7 +40,7 @@ namespace algo {
         }
       }
 
-      SetPayload(data_[idx], std::move(obj));
+      SetPayload(data_[idx % data_.size()], std::move(obj));
       return true;
     }
 
@@ -49,7 +49,7 @@ namespace algo {
       while (true) {
         std::size_t cur_w_idx = write_idx_.load(std::memory_order_relaxed);
         std::size_t cur_r_idx = read_idx_.load(std::memory_order_relaxed);
-        if (cur_w_idx == cur_r_idx) {
+        if (cur_w_idx <= cur_r_idx) {
           return std::nullopt;
         }
 
@@ -64,17 +64,19 @@ namespace algo {
         }
       }
 
-      return RetrievePayload(data_[idx]);
+      return RetrievePayload(data_[idx % data_.size()]);
     }
 
     void Push(T&& obj) noexcept {
-      SetPayload(data_[write_idx_.fetch_add(1, std::memory_order_relaxed)],
+      SetPayload(data_[write_idx_.fetch_add(1, std::memory_order_relaxed) %
+                       data_.size()],
                  std::move(obj));
     }
 
     T Pop() noexcept {
       return RetrievePayload(
-          data_[read_idx_.fetch_add(1, std::memory_order_relaxed)]);
+          data_[read_idx_.fetch_add(1, std::memory_order_relaxed) %
+                data_.size()]);
     }
 
   private:

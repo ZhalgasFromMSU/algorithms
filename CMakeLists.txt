@@ -18,6 +18,9 @@ PUBLIC FILE_SET modules TYPE CXX_MODULES FILES
 
 include(CTest)
 if (BUILD_TESTING)
+  add_compile_options(-fsanitize=thread -g)
+  add_link_options(-fsanitize=thread)
+
   include(FetchContent)
   FetchContent_Declare(
     googletest
