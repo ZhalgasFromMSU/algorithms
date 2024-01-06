@@ -18,14 +18,7 @@ TEST(LfQueue, Pop) {
 }
 
 TEST(LfQueue, SpSc) {
-  algo::LfQueue<int> queue(1000, 1, 1);
-
-  std::jthread producer{[&] {
-    std::size_t counter = 0;
-    while (counter < 1000) {
-      ASSERT_TRUE(queue.TryPush(counter++));
-    }
-  }};
+  algo::LfQueue<std::size_t> queue(1000, 1, 1);
 
   std::jthread consumer{[&] {
     std::size_t counter = 0;
@@ -34,4 +27,28 @@ TEST(LfQueue, SpSc) {
     }
     ASSERT_FALSE(queue.TryPop());
   }};
+
+  std::jthread producer{[&] {
+    std::size_t counter = 0;
+    while (counter < 1000) {
+      ASSERT_TRUE(queue.TryPush(counter++));
+    }
+  }};
 }
+
+TEST(LfQueue, SpMc) {
+  std::size_t n_consumers = 8;
+  algo::LfQueue<std::size_t> queue(8, 1, n_consumers);
+
+  std::vector<std::jthread> consumers;
+  for (std::size_t i = 0; i < n_consumers; ++i) {
+    consumers.emplace_back([&, i = i] { ASSERT_EQ(queue.Pop(), i); });
+  }
+
+  std::jthread producer{[&] {
+    for (std::size_t i = 0; i < n_consumers; ++i) {
+      ASSERT_TRUE(queue.TryPush(std::move(i)));
+    }
+  }};
+}
+

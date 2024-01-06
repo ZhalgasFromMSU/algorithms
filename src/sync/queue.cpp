@@ -20,6 +20,12 @@ namespace algo {
         , data_(std::max({max_size_hint, num_writers, num_readers})) {
     }
 
+    ~LfQueue() {
+      for (std::size_t i = read_idx_.load(); i < write_idx_.load(); ++i) {
+        data_[i % data_.size()].payload.obj.~T();
+      }
+    }
+
     bool TryPush(T&& obj) noexcept {
       std::size_t idx;
       while (true) {
