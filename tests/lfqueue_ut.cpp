@@ -1,5 +1,7 @@
-#include <gtest/gtest.h>
+#include <algorithm>
 #include <thread>
+
+#include <gtest/gtest.h>
 
 import algo;
 
@@ -52,3 +54,43 @@ TEST(LfQueue, SpMc) {
   }};
 }
 
+TEST(LfQueue, MpMc) {
+  std::size_t n_consumers = 8;
+  std::size_t n_producers = 8;
+  algo::LfQueue<std::size_t> queue(1000, n_producers, n_consumers);
+
+  std::vector<std::atomic_flag> flags(1000);
+  {
+    std::atomic<std::size_t> consumer_counter = 0;
+    std::vector<std::jthread> consumers(n_consumers);
+    for (auto&& consumer : consumers) {
+      consumer = std::jthread{[&] {
+        while (consumer_counter.fetch_add(1, std::memory_order_relaxed) <
+               1000) {
+          flags[queue.Pop()].test_and_set(std::memory_order_relaxed);
+        }
+      }};
+    }
+
+    std::atomic<std::size_t> producer_counter = 0;
+    std::vector<std::jthread> producers(n_producers);
+    for (auto&& producer : producers) {
+      producer = std::jthread{[&] {
+        while (true) {
+          std::size_t to_push =
+              producer_counter.fetch_add(1, std::memory_order_relaxed);
+          if (to_push >= 1000) {
+            break;
+          }
+
+          queue.Push(std::move(to_push));
+        }
+      }};
+    }
+  }
+
+  for (auto&& flag : flags) {
+    ASSERT_TRUE(
+        std::ranges::all_of(flags, [](auto& flag) { return flag.test(); }));
+  }
+}
